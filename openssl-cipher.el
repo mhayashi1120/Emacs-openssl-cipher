@@ -53,8 +53,6 @@
 
 ;;; TODO:
 
-;; * remove "Salted__" ?
-;; * devide test code.
 ;; * encrypt file? `openssl-cipher-encrypt-file' <-> `openssl-cipher-decrypt-file'
 ;; * encrypt buffer? `openssl-cipher-encrypt-buffer' <-> `openssl-cipher-decrypt-buffer'
 ;; * encrypt region? `openssl-cipher-encrypt-region' <-> `openssl-cipher-decrypt-region'
