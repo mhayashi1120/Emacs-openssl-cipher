@@ -4,7 +4,7 @@
 ;; Keywords: openssl encrypt decrypt password
 ;; URL: http://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
 ;; Emacs: GNU Emacs 22 or later
-;; Version 0.5.1
+;; Version 0.6.0
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -86,29 +86,27 @@
   (decode-coding-string
    (openssl-cipher-decrypt-unibytes encrypted) openssl-cipher-string-encoding))
 
-(defun openssl-cipher-encrypt-unibytes (string)
+(defun openssl-cipher-encrypt-unibytes (unibyte-string)
   "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by `openssl-cipher-decrypt-unibytes'"
-  (when (multibyte-string-p string)
+  (when (multibyte-string-p unibyte-string)
     (error "Multibyte string is not supported"))
   (let ((out (openssl-cipher--create-temp-file)))
     (unwind-protect
-        (let ((in (openssl-cipher--create-temp-binary string)))
+        (let ((in (openssl-cipher--create-temp-binary unibyte-string)))
           (unwind-protect
               (progn
                 (openssl-cipher--encrypt in out)
                 (openssl-cipher--create-encrypted 
-                 openssl-cipher-algorithm 
                  (openssl-cipher--file-unibytes out)))
             (delete-file in)))
       (delete-file out))))
 
-(defun openssl-cipher-decrypt-unibytes (encrypted)
-  "Decrypt a ENCRYPTED object which was encrypted by `openssl-cipher-encrypt-unibytes'"
-  (unless (vectorp encrypted)
-    (error "Not a encrypted object"))
-  (let* ((algorithm (symbol-value (intern "algorithm" encrypted)))
-         (string (symbol-value (intern "encrypted" encrypted))))
-    (let ((in (openssl-cipher--create-temp-binary string)))
+(defun openssl-cipher-decrypt-unibytes (encrypted-string)
+  "Decrypt a ENCRYPTED-STRING which was encrypted by `openssl-cipher-encrypt-unibytes'"
+  (unless (stringp encrypted-string)
+    (error "Not a encrypted string"))
+  (let ((algorithm (get-text-property 0 'encrypted-algorithm encrypted-string)))
+    (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
       (unwind-protect
           (let ((out (openssl-cipher--create-temp-file)))
             (unwind-protect
@@ -224,11 +222,8 @@
           (sit-for 0.1)))
     (delete-process proc)))
 
-(defun openssl-cipher--create-encrypted (algorithm string)
-  (let ((vec (make-vector 2 nil)))
-    (set (intern "algorithm" vec) algorithm)
-    (set (intern "encrypted" vec) string)
-    vec))
+(defun openssl-cipher--create-encrypted (string &optional algorithm)
+  (propertize string 'encrypted-algorithm (or algorithm openssl-cipher-algorithm)))
 
 (provide 'openssl-cipher)
 
