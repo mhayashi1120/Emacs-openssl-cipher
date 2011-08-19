@@ -4,7 +4,7 @@
 ;; Keywords: openssl encrypt decrypt password
 ;; URL: http://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
 ;; Emacs: GNU Emacs 22 or later
-;; Version 0.5.0
+;; Version 0.6.0
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -53,10 +53,7 @@
 
 ;;; TODO:
 
-;; * encrypt file? `openssl-cipher-encrypt-file' <-> `openssl-cipher-decrypt-file'
-;; * encrypt buffer? `openssl-cipher-encrypt-buffer' <-> `openssl-cipher-decrypt-buffer'
-;; * encrypt region? `openssl-cipher-encrypt-region' <-> `openssl-cipher-decrypt-region'
-;; * retry when failed to decrypt.
+;; * retry password when failed to decrypt.
 
 ;;; Code:
 
@@ -80,63 +77,58 @@
 (defvar openssl-cipher-string-encoding (terminal-coding-system))
 
 (defun openssl-cipher-encrypt-string (string)
+  "Encrypt a well encoded STRING to encrypted object which can be decrypted by `openssl-cipher-decrypt-string'."
   (openssl-cipher-encrypt-unibytes 
    (encode-coding-string string openssl-cipher-string-encoding)))
 
 (defun openssl-cipher-decrypt-string (encrypted)
+  "Decrypt a ENCRYPTED object which was encrypted by `openssl-cipher-encrypt-string'"
   (decode-coding-string
    (openssl-cipher-decrypt-unibytes encrypted) openssl-cipher-string-encoding))
 
-(defun openssl-cipher-encrypt-unibytes (string)
-  (when (multibyte-string-p string)
+(defun openssl-cipher-encrypt-unibytes (unibyte-string)
+  "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by `openssl-cipher-decrypt-unibytes'"
+  (when (multibyte-string-p unibyte-string)
     (error "Multibyte string is not supported"))
-  (let ((in (openssl-cipher--create-temp-file)))
+  (let ((out (openssl-cipher--create-temp-file)))
     (unwind-protect
-        (let ((out (openssl-cipher--create-temp-file)))
+        (let ((in (openssl-cipher--create-temp-binary unibyte-string)))
           (unwind-protect
               (progn
-                (let ((coding-system-for-write 'binary))
-                  (write-region string nil in nil 'no-msg))
-                (with-temp-buffer
-                  (let* ((proc (openssl-cipher--start-openssl 
-                                openssl-cipher-algorithm
-                                "-e"
-                                "-in" in 
-                                "-out" out
-                                "-pass" "stdin")))
-                    (openssl-cipher--send-password-and-wait proc t)
-                    (unless (= (process-exit-status proc) 0)
-                      (error "Failed encrypt"))))
-                (with-temp-buffer
-                  (set-buffer-multibyte nil)
-                  (let ((coding-system-for-read 'binary))
-                    (insert-file-contents out))
-                  (openssl-cipher--create-encrypted 
-                   openssl-cipher-algorithm (buffer-string))))
-            (delete-file out)))
-      (delete-file in))))
+                (openssl-cipher--encrypt in out)
+                (openssl-cipher--create-encrypted 
+                 (openssl-cipher--file-unibytes out)))
+            (delete-file in)))
+      (delete-file out))))
 
-(defun openssl-cipher-decrypt-unibytes (encrypted)
-  (unless (vectorp encrypted)
-    (error "Not a encrypted object"))
-  (let* ((algorithm (aref encrypted 0))
-         (string (symbol-value algorithm)))
-    (let ((in (openssl-cipher--create-temp-file)))
+(defun openssl-cipher-decrypt-unibytes (encrypted-string)
+  "Decrypt a ENCRYPTED-STRING which was encrypted by `openssl-cipher-encrypt-unibytes'"
+  (unless (stringp encrypted-string)
+    (error "Not a encrypted string"))
+  (let ((algorithm (get-text-property 0 'encrypted-algorithm encrypted-string)))
+    (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
       (unwind-protect
-          (progn
-            (let ((coding-system-for-write 'binary))
-              (write-region string nil in nil 'no-msg))
-            (with-temp-buffer
-              (let* ((proc (openssl-cipher--start-openssl 
-                            (symbol-name algorithm)
-                            "-d"
-                            "-in" in 
-                            "-pass" "stdin")))
-                (openssl-cipher--send-password-and-wait proc nil)
-                (unless (= (process-exit-status proc) 0)
-                  (error "Bad decrypt")))
-              (string-make-unibyte (buffer-string))))
+          (let ((out (openssl-cipher--create-temp-file)))
+            (unwind-protect
+                (progn
+                  (openssl-cipher--decrypt in out algorithm)
+                  (openssl-cipher--file-unibytes out))
+              (delete-file out)))
         (delete-file in)))))
+
+(defun openssl-cipher-encrypt-file (file)
+  "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
+  (openssl-cipher--update-file-by 
+   file 
+   (lambda (input output)
+     (openssl-cipher--encrypt input output))))
+
+(defun openssl-cipher-decrypt-file (file)
+  "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
+  (openssl-cipher--update-file-by 
+   file 
+   (lambda (input output)
+     (openssl-cipher--decrypt input output))))
 
 (defun openssl-cipher-supported-types ()
   (when (executable-find openssl-cipher-command)
@@ -152,6 +144,56 @@
 ;;
 ;; inner functions
 ;;
+
+(defun openssl-cipher--create-temp-binary (string)
+  (let ((file (openssl-cipher--create-temp-file))
+        (coding-system-for-write 'binary))
+    (write-region string nil file nil 'no-msg)
+    file))
+
+(defun openssl-cipher--file-unibytes (file)
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (let ((coding-system-for-read 'binary))
+      (insert-file-contents file))
+    (buffer-string)))
+
+(defun openssl-cipher--encrypt (input output)
+  (with-temp-buffer
+    (let* ((proc (openssl-cipher--start-openssl 
+                  openssl-cipher-algorithm
+                  "-e"
+                  "-in" input
+                  "-out" output
+                  "-pass" "stdin")))
+      (openssl-cipher--send-password-and-wait proc t)
+      (unless (= (process-exit-status proc) 0)
+        (error "Failed encrypt")))))
+
+(defun openssl-cipher--decrypt (input output &optional algorithm)
+  (with-temp-buffer
+    (let* ((proc (openssl-cipher--start-openssl 
+                  (or algorithm openssl-cipher-algorithm)
+                  "-d"
+                  "-in" input
+                  "-out" output
+                  "-pass" "stdin")))
+      (openssl-cipher--send-password-and-wait proc nil)
+      (unless (= (process-exit-status proc) 0)
+        (error "Bad decrypt")))))
+
+(defun openssl-cipher--update-file-by (input function)
+  (let ((time (nth 5 (file-attributes file))))
+    (let ((output (openssl-cipher--create-temp-file)))
+      (condition-case err
+          (progn
+            (funcall function input output)
+            (delete-file input)
+            (rename-file output input)
+            (set-file-times input time))
+        (error 
+         (ignore-errors (delete-file output))
+         (signal (car err) (cdr err)))))))
 
 (defun openssl-cipher--create-temp-file ()
   (let ((file (make-temp-file "openssl-cipher-")))
@@ -180,10 +222,8 @@
           (sit-for 0.1)))
     (delete-process proc)))
 
-(defun openssl-cipher--create-encrypted (algorithm string)
-  (let ((vec (make-vector 1 nil)))
-    (set (intern algorithm vec) string)
-    vec))
+(defun openssl-cipher--create-encrypted (string &optional algorithm)
+  (propertize string 'encrypted-algorithm (or algorithm openssl-cipher-algorithm)))
 
 (provide 'openssl-cipher)
 
