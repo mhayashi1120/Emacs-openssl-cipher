@@ -61,7 +61,7 @@
   "Emacs openssl cipher interface."
   :group 'applications
   :prefix "openssl-cipher-")
-  
+
 (defvar quit-flag)
 
 (defcustom openssl-cipher-algorithm "aes-256-cbc"
@@ -79,7 +79,7 @@
 ;;;###autoload
 (defun openssl-cipher-encrypt-string (string)
   "Encrypt a well encoded STRING to encrypted object which can be decrypted by `openssl-cipher-decrypt-string'."
-  (openssl-cipher-encrypt-unibytes 
+  (openssl-cipher-encrypt-unibytes
    (encode-coding-string string openssl-cipher-string-encoding)))
 
 ;;;###autoload
@@ -99,7 +99,7 @@
           (unwind-protect
               (progn
                 (openssl-cipher--encrypt in out)
-                (openssl-cipher--create-encrypted 
+                (openssl-cipher--create-encrypted
                  (openssl-cipher--file-unibytes out)))
             (openssl-cipher--purge-temp in)))
       (openssl-cipher--purge-temp out))))
@@ -123,16 +123,16 @@
 ;;;###autoload
 (defun openssl-cipher-encrypt-file (file)
   "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
-  (openssl-cipher--call/io-file 
-   file 
+  (openssl-cipher--call/io-file
+   file
    (lambda (input output)
      (openssl-cipher--encrypt input output))))
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-file (file)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
-  (openssl-cipher--call/io-file 
-   file 
+  (openssl-cipher--call/io-file
+   file
    (lambda (input output)
      (openssl-cipher--decrypt input output))))
 
@@ -166,7 +166,7 @@
 
 (defun openssl-cipher--encrypt (input output)
   (with-temp-buffer
-    (let* ((proc (openssl-cipher--start-openssl 
+    (let* ((proc (openssl-cipher--start-openssl
                   openssl-cipher-algorithm
                   "-e"
                   "-in" input
@@ -178,7 +178,7 @@
 
 (defun openssl-cipher--decrypt (input output &optional algorithm)
   (with-temp-buffer
-    (let* ((proc (openssl-cipher--start-openssl 
+    (let* ((proc (openssl-cipher--start-openssl
                   (or algorithm openssl-cipher-algorithm)
                   "-d"
                   "-in" input
@@ -197,7 +197,7 @@
             (openssl-cipher--purge-temp input)
             (rename-file output input)
             (set-file-times input time))
-        (error 
+        (error
          (ignore-errors (openssl-cipher--purge-temp output))
          (signal (car err) (cdr err)))))))
 
@@ -215,7 +215,7 @@
   (let* ((coding-system-for-read 'binary)
          (coding-system-for-write 'binary)
          (proc (apply 'start-process "Openssl Cipher" (current-buffer)
-                      openssl-cipher-command 
+                      openssl-cipher-command
                       args)))
     (set-process-sentinel proc (lambda (p e)))
     proc))
