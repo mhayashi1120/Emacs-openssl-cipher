@@ -76,16 +76,19 @@
 
 (defvar openssl-cipher-string-encoding (terminal-coding-system))
 
+;;;###autoload
 (defun openssl-cipher-encrypt-string (string)
   "Encrypt a well encoded STRING to encrypted object which can be decrypted by `openssl-cipher-decrypt-string'."
   (openssl-cipher-encrypt-unibytes 
    (encode-coding-string string openssl-cipher-string-encoding)))
 
+;;;###autoload
 (defun openssl-cipher-decrypt-string (encrypted)
   "Decrypt a ENCRYPTED object which was encrypted by `openssl-cipher-encrypt-string'"
   (decode-coding-string
    (openssl-cipher-decrypt-unibytes encrypted) openssl-cipher-string-encoding))
 
+;;;###autoload
 (defun openssl-cipher-encrypt-unibytes (unibyte-string)
   "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by `openssl-cipher-decrypt-unibytes'"
   (when (multibyte-string-p unibyte-string)
@@ -98,9 +101,10 @@
                 (openssl-cipher--encrypt in out)
                 (openssl-cipher--create-encrypted 
                  (openssl-cipher--file-unibytes out)))
-            (delete-file in)))
-      (delete-file out))))
+            (openssl-cipher--purge-temp in)))
+      (openssl-cipher--purge-temp out))))
 
+;;;###autoload
 (defun openssl-cipher-decrypt-unibytes (encrypted-string)
   "Decrypt a ENCRYPTED-STRING which was encrypted by `openssl-cipher-encrypt-unibytes'"
   (unless (stringp encrypted-string)
@@ -113,19 +117,21 @@
                 (progn
                   (openssl-cipher--decrypt in out algorithm)
                   (openssl-cipher--file-unibytes out))
-              (delete-file out)))
-        (delete-file in)))))
+              (openssl-cipher--purge-temp out)))
+        (openssl-cipher--purge-temp in)))))
 
+;;;###autoload
 (defun openssl-cipher-encrypt-file (file)
   "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
-  (openssl-cipher--update-file-by 
+  (openssl-cipher--call/io-file 
    file 
    (lambda (input output)
      (openssl-cipher--encrypt input output))))
 
+;;;###autoload
 (defun openssl-cipher-decrypt-file (file)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
-  (openssl-cipher--update-file-by 
+  (openssl-cipher--call/io-file 
    file 
    (lambda (input output)
      (openssl-cipher--decrypt input output))))
@@ -182,18 +188,22 @@
       (unless (= (process-exit-status proc) 0)
         (error "Bad decrypt")))))
 
-(defun openssl-cipher--update-file-by (input function)
-  (let ((time (nth 5 (file-attributes file))))
+(defun openssl-cipher--call/io-file (input function)
+  (let ((time (nth 5 (file-attributes input))))
     (let ((output (openssl-cipher--create-temp-file)))
       (condition-case err
           (progn
             (funcall function input output)
-            (delete-file input)
+            (openssl-cipher--purge-temp input)
             (rename-file output input)
             (set-file-times input time))
         (error 
-         (ignore-errors (delete-file output))
+         (ignore-errors (openssl-cipher--purge-temp output))
          (signal (car err) (cdr err)))))))
+
+(defun openssl-cipher--purge-temp (file)
+  (let (delete-by-moving-to-trash)
+    (delete-file file)))
 
 (defun openssl-cipher--create-temp-file ()
   (let ((file (make-temp-file "openssl-cipher-")))
