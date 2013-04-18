@@ -4,7 +4,7 @@
 ;; Keywords: data, convenience, files
 ;; URL: http://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
 ;; Emacs: GNU Emacs 22 or later
-;; Version 0.6.1
+;; Version 0.7.0
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -81,21 +81,24 @@
 ;;;
 
 ;;;###autoload
-(defun openssl-cipher-encrypt-string (string)
+(defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
   "Encrypt a well encoded STRING to encrypted object which can be decrypted by
  `openssl-cipher-decrypt-string'."
   (openssl-cipher-encrypt-unibytes
-   (encode-coding-string string openssl-cipher-string-encoding)))
+   (encode-coding-string
+    string (or coding-system openssl-cipher-string-encoding))
+   algorithm))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt-string (encrypted)
+(defun openssl-cipher-decrypt-string (encrypted &optional coding-system algorithm)
   "Decrypt a ENCRYPTED object which was encrypted by
 `openssl-cipher-encrypt-string'"
   (decode-coding-string
-   (openssl-cipher-decrypt-unibytes encrypted) openssl-cipher-string-encoding))
+   (openssl-cipher-decrypt-unibytes encrypted algorithm)
+   (or coding-system openssl-cipher-string-encoding)))
 
 ;;;###autoload
-(defun openssl-cipher-encrypt-unibytes (unibyte-string)
+(defun openssl-cipher-encrypt-unibytes (unibyte-string &optional algorithm)
   "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
 `openssl-cipher-decrypt-unibytes'"
   (when (multibyte-string-p unibyte-string)
@@ -105,45 +108,47 @@
         (let ((in (openssl-cipher--create-temp-binary unibyte-string)))
           (unwind-protect
               (progn
-                (openssl-cipher--encrypt in out)
-                (openssl-cipher--create-encrypted
-                 (openssl-cipher--file-unibytes out)))
+                (openssl-cipher--encrypt in out algorithm)
+                (openssl-cipher--file-unibytes out))
             (openssl-cipher--purge-temp in)))
       (openssl-cipher--purge-temp out))))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt-unibytes (encrypted-string)
+(defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
 `openssl-cipher-encrypt-unibytes'"
   (unless (stringp encrypted-string)
     (error "Not a encrypted string"))
-  (let ((algorithm (get-text-property
-                    0 'encrypted-algorithm encrypted-string)))
-    (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
-      (unwind-protect
-          (let ((out (openssl-cipher--create-temp-file)))
-            (unwind-protect
-                (progn
-                  (openssl-cipher--decrypt in out algorithm)
-                  (openssl-cipher--file-unibytes out))
-              (openssl-cipher--purge-temp out)))
-        (openssl-cipher--purge-temp in)))))
+  (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
+    (unwind-protect
+        (let ((out (openssl-cipher--create-temp-file)))
+          (unwind-protect
+              (progn
+                (openssl-cipher--decrypt in out algorithm)
+                (openssl-cipher--file-unibytes out))
+            (openssl-cipher--purge-temp out)))
+      (openssl-cipher--purge-temp in))))
 
 ;;;###autoload
-(defun openssl-cipher-encrypt-file (file)
+(defun openssl-cipher-encrypt-file (file &optional todo todo2 algorithm)
   "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
   (openssl-cipher--call/io-file
    file
    (lambda (input output)
-     (openssl-cipher--encrypt input output))))
+     (openssl-cipher--encrypt input output algorithm))))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt-file (file)
+(defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
   (openssl-cipher--call/io-file
    file
    (lambda (input output)
-     (openssl-cipher--decrypt input output))))
+     (openssl-cipher--decrypt input output algorithm))))
+
+;;;###autoload
+(defun openssl-cipher-installed-p ()
+  (and (stringp openssl-cipher-command)
+       (executable-find openssl-cipher-command)))
 
 ;;;
 ;;; inner functions
@@ -178,11 +183,11 @@
       (insert-file-contents file))
     (buffer-string)))
 
-(defun openssl-cipher--encrypt (input output)
+(defun openssl-cipher--encrypt (input output &optional algorithm)
   (with-temp-buffer
     (let ((proc (openssl-cipher--start-openssl
                  "enc"
-                 (concat "-" openssl-cipher-algorithm)
+                 (concat "-" (or algorithm openssl-cipher-algorithm))
                  "-e"
                  "-in" input
                  "-out" output
@@ -249,10 +254,6 @@
                     (not quit-flag))
           (sit-for 0.1)))
     (delete-process proc)))
-
-(defun openssl-cipher--create-encrypted (string &optional algorithm)
-  (propertize
-   string 'encrypted-algorithm (or algorithm openssl-cipher-algorithm)))
 
 (provide 'openssl-cipher)
 
