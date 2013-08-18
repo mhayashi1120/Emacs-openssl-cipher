@@ -2,7 +2,7 @@
 
 ;; Author: Masahiro Hayashi <mhayashi1120@gmail.com>
 ;; Keywords: data, convenience, files
-;; URL: http://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
+;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
 ;; Emacs: GNU Emacs 22 or later
 ;; Version 0.7.0
 
@@ -80,22 +80,6 @@
 ;;; inner functions
 ;;;
 
-(defun openssl-cipher-supported-types ()
-  (when (executable-find openssl-cipher-command)
-    (with-temp-buffer
-      (let ((process-environment (copy-sequence process-environment)))
-        (setenv "LANG" "C")
-        (call-process openssl-cipher-command nil t nil "enc" "help")
-        (goto-char (point-min))
-        (unless (re-search-forward "^Cipher Types" nil t)
-          (error "Unable parse supported types"))
-        (let* ((text (buffer-substring (point) (point-max)))
-               (args (split-string text "[ \t\n]" t))
-               (algos (mapcar (lambda (a)
-                                (and (string-match "\\`-\\(.*\\)" a)
-                                     (match-string 1 a))) args)))
-          algos)))))
-
 (defun openssl-cipher--create-temp-binary (string)
   (let ((file (openssl-cipher--create-temp-file))
         (coding-system-for-write 'binary))
@@ -110,30 +94,24 @@
     (buffer-string)))
 
 (defun openssl-cipher--encrypt (input output &optional algorithm)
-  (with-temp-buffer
-    (let ((proc (openssl-cipher--start-openssl
-                 "enc"
-                 (concat "-" (or algorithm openssl-cipher-algorithm))
-                 "-e"
-                 "-in" input
-                 "-out" output
-                 "-pass" "stdin")))
-      (openssl-cipher--send-password-and-wait proc t)
-      (unless (= (process-exit-status proc) 0)
-        (error "Failed encrypt")))))
+  (let ((code (openssl-cipher--call-openssl
+               "enc"
+               (concat "-" (or algorithm openssl-cipher-algorithm))
+               "-e"
+               "-in" input
+               "-out" output)))
+    (unless (= code 0)
+      (error "Failed encrypt"))))
 
 (defun openssl-cipher--decrypt (input output &optional algorithm)
-  (with-temp-buffer
-    (let ((proc (openssl-cipher--start-openssl
-                 "enc"
-                 (concat "-" (or algorithm openssl-cipher-algorithm))
-                 "-d"
-                 "-in" input
-                 "-out" output
-                 "-pass" "stdin")))
-      (openssl-cipher--send-password-and-wait proc nil)
-      (unless (= (process-exit-status proc) 0)
-        (error "Bad decrypt")))))
+  (let ((code (openssl-cipher--call-openssl
+               "enc"
+               (concat "-" (or algorithm openssl-cipher-algorithm))
+               "-d"
+               "-in" input
+               "-out" output)))
+    (unless (= code 0)
+      (error "Bad decrypt"))))
 
 (defun openssl-cipher--call/io-file (input function)
   (let ((time (nth 5 (file-attributes input))))
@@ -157,50 +135,52 @@
     (set-file-modes file ?\600)
     file))
 
-(defun openssl-cipher--start-openssl (&rest args)
-  (set-buffer-multibyte nil)
-  (let ((process-environment (copy-sequence process-environment)))
-    (setenv "LANG" "C")
-    (let* ((coding-system-for-read 'binary)
-           (coding-system-for-write 'binary)
-           (proc (apply 'start-process "Openssl Cipher" (current-buffer)
-                        openssl-cipher-command
-                        args)))
-      (set-process-sentinel proc (lambda (p e)))
-      proc)))
+(defun openssl-cipher--call-openssl (&rest args)
+  (with-temp-buffer
+    (let ((process-environment (copy-sequence process-environment))
+          ;; if encryption
+          (pass (openssl-cipher--read-passwd (member "-e" args))))
+      (setenv "LANG" "C")
+      (setenv "EMACS_OPENSSL_CIPHER" pass)
+      (setq args (append
+                  args
+                  (list "-pass" (format "env:%s" "EMACS_OPENSSL_CIPHER"))))
+      (let* ((coding-system-for-read 'binary)
+             (coding-system-for-write 'binary)
+             (code (apply 'call-process openssl-cipher-command nil t nil args)))
+        (clear-string pass)
+        (unless (= (buffer-size) 0)
+          (error "%s" (buffer-string)))
+        code))))
 
-(defun openssl-cipher--send-password-and-wait (proc encrypt-p)
-  (unwind-protect
-      (let* ((inhibit-quit t)
-             (pass (read-passwd "Password: " encrypt-p)))
-        (process-send-string proc (concat pass "\n"))
-        (when pass
-          (clear-string pass))
-        (while (and (eq (process-status proc) 'run)
-                    (not quit-flag))
-          (sit-for 0.1)))
-    (delete-process proc)))
+(defun openssl-cipher--read-passwd (&optional confirm)
+  (read-passwd "Password: " confirm))
+
+(defun openssl-cipher-supported-types ()
+  (with-temp-buffer
+    (let ((process-environment (copy-sequence process-environment)))
+      (setenv "LANG" "C")
+      (call-process openssl-cipher-command nil t nil "enc" "help")
+      (goto-char (point-min))
+      (unless (re-search-forward "^Cipher Types" nil t)
+        (error "Unable parse supported types"))
+      (let* ((text (buffer-substring (point) (point-max)))
+             (args (split-string text "[ \t\n]" t))
+             (algos (mapcar (lambda (a)
+                              (and (string-match "\\`-\\(.*\\)" a)
+                                   (match-string 1 a))) args)))
+        algos))))
+
+(defun openssl-cipher--check-save-file (file)
+  (unless (or (null file)
+              (and (file-exists-p file)
+                   (y-or-n-p (format "Overwrite %s? " file))))
+    ;;FIXME: should be user-error
+    (signal 'quit nil)))
 
 ;;;
 ;;; User interface
 ;;;
-
-;;;###autoload
-(defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
-  "Encrypt a well encoded STRING to encrypted object which can be decrypted by
- `openssl-cipher-decrypt-string'."
-  (openssl-cipher-encrypt-unibytes
-   (encode-coding-string
-    string (or coding-system openssl-cipher-string-encoding))
-   algorithm))
-
-;;;###autoload
-(defun openssl-cipher-decrypt-string (encrypted &optional coding-system algorithm)
-  "Decrypt a ENCRYPTED object which was encrypted by
-`openssl-cipher-encrypt-string'"
-  (decode-coding-string
-   (openssl-cipher-decrypt-unibytes encrypted algorithm)
-   (or coding-system openssl-cipher-string-encoding)))
 
 ;;;###autoload
 (defun openssl-cipher-encrypt-unibytes (unibyte-string &optional algorithm)
@@ -235,23 +215,53 @@
       (openssl-cipher--purge-temp in))))
 
 ;;;###autoload
-(defun openssl-cipher-encrypt-file (file &optional todo todo2 algorithm)
-  "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
+(defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
+  "Encrypt a well encoded STRING to encrypted object which can be decrypted by
+ `openssl-cipher-decrypt-string'.
+TODO"
+  (openssl-cipher-encrypt-unibytes
+   (encode-coding-string
+    string (or coding-system openssl-cipher-string-encoding))
+   algorithm))
+
+;;;###autoload
+(defun openssl-cipher-decrypt-string (encrypted &optional coding-system algorithm)
+  "Decrypt a ENCRYPTED object which was encrypted by
+`openssl-cipher-encrypt-string'
+TODO"
+  (decode-coding-string
+   (openssl-cipher-decrypt-unibytes encrypted algorithm)
+   (or coding-system openssl-cipher-string-encoding)))
+
+;;;###autoload
+(defun openssl-cipher-encrypt-file (file &optional algorithm save-file)
+  "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'
+TODO"
+  (openssl-cipher--check-save-file save-file)
   (openssl-cipher--call/io-file
    file
    (lambda (input output)
-     (openssl-cipher--encrypt input output algorithm))))
+     (openssl-cipher--encrypt input output algorithm)))
+  ;;TODO keep FILE?
+  (when save-file
+    (rename-file file save-file t)))
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
-  "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
+  "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'
+TODO"
+  (openssl-cipher--check-save-file save-file)
   (openssl-cipher--call/io-file
    file
    (lambda (input output)
-     (openssl-cipher--decrypt input output algorithm))))
+     (openssl-cipher--decrypt input output algorithm)))
+  ;;TODO keep FILE?
+  (when save-file
+    (rename-file file save-file t)))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
+  "Return non-nil if `openssl-cipher' is correctly setup."
   (and (stringp openssl-cipher-command)
        (executable-find openssl-cipher-command)))
 
