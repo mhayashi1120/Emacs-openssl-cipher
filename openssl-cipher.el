@@ -77,80 +77,6 @@
 (defvar openssl-cipher-string-encoding (terminal-coding-system))
 
 ;;;
-;;; User interface
-;;;
-
-;;;###autoload
-(defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
-  "Encrypt a well encoded STRING to encrypted object which can be decrypted by
- `openssl-cipher-decrypt-string'."
-  (openssl-cipher-encrypt-unibytes
-   (encode-coding-string
-    string (or coding-system openssl-cipher-string-encoding))
-   algorithm))
-
-;;;###autoload
-(defun openssl-cipher-decrypt-string (encrypted &optional coding-system algorithm)
-  "Decrypt a ENCRYPTED object which was encrypted by
-`openssl-cipher-encrypt-string'"
-  (decode-coding-string
-   (openssl-cipher-decrypt-unibytes encrypted algorithm)
-   (or coding-system openssl-cipher-string-encoding)))
-
-;;;###autoload
-(defun openssl-cipher-encrypt-unibytes (unibyte-string &optional algorithm)
-  "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
-`openssl-cipher-decrypt-unibytes'"
-  (when (multibyte-string-p unibyte-string)
-    (error "Multibyte string is not supported"))
-  (let ((out (openssl-cipher--create-temp-file)))
-    (unwind-protect
-        (let ((in (openssl-cipher--create-temp-binary unibyte-string)))
-          (unwind-protect
-              (progn
-                (openssl-cipher--encrypt in out algorithm)
-                (openssl-cipher--file-unibytes out))
-            (openssl-cipher--purge-temp in)))
-      (openssl-cipher--purge-temp out))))
-
-;;;###autoload
-(defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
-  "Decrypt a ENCRYPTED-STRING which was encrypted by
-`openssl-cipher-encrypt-unibytes'"
-  (unless (stringp encrypted-string)
-    (error "Not a encrypted string"))
-  (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
-    (unwind-protect
-        (let ((out (openssl-cipher--create-temp-file)))
-          (unwind-protect
-              (progn
-                (openssl-cipher--decrypt in out algorithm)
-                (openssl-cipher--file-unibytes out))
-            (openssl-cipher--purge-temp out)))
-      (openssl-cipher--purge-temp in))))
-
-;;;###autoload
-(defun openssl-cipher-encrypt-file (file &optional todo todo2 algorithm)
-  "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
-  (openssl-cipher--call/io-file
-   file
-   (lambda (input output)
-     (openssl-cipher--encrypt input output algorithm))))
-
-;;;###autoload
-(defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
-  "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
-  (openssl-cipher--call/io-file
-   file
-   (lambda (input output)
-     (openssl-cipher--decrypt input output algorithm))))
-
-;;;###autoload
-(defun openssl-cipher-installed-p ()
-  (and (stringp openssl-cipher-command)
-       (executable-find openssl-cipher-command)))
-
-;;;
 ;;; inner functions
 ;;;
 
@@ -254,6 +180,80 @@
                     (not quit-flag))
           (sit-for 0.1)))
     (delete-process proc)))
+
+;;;
+;;; User interface
+;;;
+
+;;;###autoload
+(defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
+  "Encrypt a well encoded STRING to encrypted object which can be decrypted by
+ `openssl-cipher-decrypt-string'."
+  (openssl-cipher-encrypt-unibytes
+   (encode-coding-string
+    string (or coding-system openssl-cipher-string-encoding))
+   algorithm))
+
+;;;###autoload
+(defun openssl-cipher-decrypt-string (encrypted &optional coding-system algorithm)
+  "Decrypt a ENCRYPTED object which was encrypted by
+`openssl-cipher-encrypt-string'"
+  (decode-coding-string
+   (openssl-cipher-decrypt-unibytes encrypted algorithm)
+   (or coding-system openssl-cipher-string-encoding)))
+
+;;;###autoload
+(defun openssl-cipher-encrypt-unibytes (unibyte-string &optional algorithm)
+  "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
+`openssl-cipher-decrypt-unibytes'"
+  (when (multibyte-string-p unibyte-string)
+    (error "Multibyte string is not supported"))
+  (let ((out (openssl-cipher--create-temp-file)))
+    (unwind-protect
+        (let ((in (openssl-cipher--create-temp-binary unibyte-string)))
+          (unwind-protect
+              (progn
+                (openssl-cipher--encrypt in out algorithm)
+                (openssl-cipher--file-unibytes out))
+            (openssl-cipher--purge-temp in)))
+      (openssl-cipher--purge-temp out))))
+
+;;;###autoload
+(defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
+  "Decrypt a ENCRYPTED-STRING which was encrypted by
+`openssl-cipher-encrypt-unibytes'"
+  (unless (stringp encrypted-string)
+    (error "Not a encrypted string"))
+  (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
+    (unwind-protect
+        (let ((out (openssl-cipher--create-temp-file)))
+          (unwind-protect
+              (progn
+                (openssl-cipher--decrypt in out algorithm)
+                (openssl-cipher--file-unibytes out))
+            (openssl-cipher--purge-temp out)))
+      (openssl-cipher--purge-temp in))))
+
+;;;###autoload
+(defun openssl-cipher-encrypt-file (file &optional todo todo2 algorithm)
+  "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'"
+  (openssl-cipher--call/io-file
+   file
+   (lambda (input output)
+     (openssl-cipher--encrypt input output algorithm))))
+
+;;;###autoload
+(defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
+  "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'"
+  (openssl-cipher--call/io-file
+   file
+   (lambda (input output)
+     (openssl-cipher--decrypt input output algorithm))))
+
+;;;###autoload
+(defun openssl-cipher-installed-p ()
+  (and (stringp openssl-cipher-command)
+       (executable-find openssl-cipher-command)))
 
 (provide 'openssl-cipher)
 
