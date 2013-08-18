@@ -93,26 +93,6 @@
       (insert-file-contents file))
     (buffer-string)))
 
-(defun openssl-cipher--encrypt (input output &optional algorithm)
-  (let ((code (openssl-cipher--call-openssl
-               "enc"
-               (concat "-" (or algorithm openssl-cipher-algorithm))
-               "-e"
-               "-in" input
-               "-out" output)))
-    (unless (= code 0)
-      (error "Failed encrypt"))))
-
-(defun openssl-cipher--decrypt (input output &optional algorithm)
-  (let ((code (openssl-cipher--call-openssl
-               "enc"
-               (concat "-" (or algorithm openssl-cipher-algorithm))
-               "-d"
-               "-in" input
-               "-out" output)))
-    (unless (= code 0)
-      (error "Bad decrypt"))))
-
 (defun openssl-cipher--call/io-file (input function)
   (let ((time (nth 5 (file-attributes input))))
     (let ((output (openssl-cipher--create-temp-file)))
@@ -135,41 +115,50 @@
     (set-file-modes file ?\600)
     file))
 
-(defun openssl-cipher--call-openssl (&rest args)
-  (with-temp-buffer
-    (let ((process-environment (copy-sequence process-environment))
-          ;; if encryption
-          (pass (openssl-cipher--read-passwd (member "-e" args))))
-      (setenv "LANG" "C")
-      (setenv "EMACS_OPENSSL_CIPHER" pass)
-      (setq args (append
-                  args
-                  (list "-pass" (format "env:%s" "EMACS_OPENSSL_CIPHER"))))
-      (let* ((coding-system-for-read 'binary)
-             (coding-system-for-write 'binary)
-             (code (apply 'call-process openssl-cipher-command nil t nil args)))
-        (clear-string pass)
-        (unless (= (buffer-size) 0)
-          (error "%s" (buffer-string)))
-        code))))
+(defmacro openssl-cipher--with-env (&rest form)
+  (declare (debug t))
+  `(with-temp-buffer
+     (let ((process-environment (copy-sequence process-environment)))
+       (setenv "LANG" "C")
+       (let ((coding-system-for-read 'binary)
+             (coding-system-for-write 'binary))
+         ,@form))))
 
+(defun openssl-cipher--invoke (&optional pass &rest args)
+  (openssl-cipher--with-env
+   (when pass
+     ;; if encryption
+     (setenv "EMACS_OPENSSL_CIPHER" pass)
+     (setq args (append
+                 args
+                 (list "-pass" (format "env:%s" "EMACS_OPENSSL_CIPHER")))))
+   (let ((code (apply 'call-process openssl-cipher-command nil t nil args)))
+     (when pass
+       (clear-string pass))
+     (unless (= (buffer-size) 0)
+       (goto-char (point-min))
+       (error "Openssl: %s" (buffer-substring-no-properties (point-min) (point-at-eol))))
+     code)))
+
+(defvar openssl-cipher-password nil)
 (defun openssl-cipher--read-passwd (&optional confirm)
-  (read-passwd "Password: " confirm))
+  ;;TODO concat new string for clear-string?
+  (or openssl-cipher-password
+      (read-passwd "Password: " confirm)))
 
 (defun openssl-cipher-supported-types ()
-  (with-temp-buffer
-    (let ((process-environment (copy-sequence process-environment)))
-      (setenv "LANG" "C")
-      (call-process openssl-cipher-command nil t nil "enc" "help")
-      (goto-char (point-min))
-      (unless (re-search-forward "^Cipher Types" nil t)
-        (error "Unable parse supported types"))
-      (let* ((text (buffer-substring (point) (point-max)))
-             (args (split-string text "[ \t\n]" t))
-             (algos (mapcar (lambda (a)
-                              (and (string-match "\\`-\\(.*\\)" a)
-                                   (match-string 1 a))) args)))
-        algos))))
+  (openssl-cipher--with-env
+   ;; this return non-zero value with succeeded
+   (call-process openssl-cipher-command nil t nil "enc" "help")
+   (goto-char (point-min))
+   (unless (re-search-forward "^Cipher Types" nil t)
+     (error "Unable parse supported types"))
+   (let* ((text (buffer-substring (point) (point-max)))
+          (args (split-string text "[ \t\n]" t))
+          (algos (mapcar (lambda (a)
+                           (and (string-match "\\`-\\(.*\\)" a)
+                                (match-string 1 a))) args)))
+     (delq nil algos))))
 
 (defun openssl-cipher--check-save-file (file)
   (unless (or (null file)
@@ -177,6 +166,53 @@
                    (y-or-n-p (format "Overwrite %s? " file))))
     ;;FIXME: should be user-error
     (signal 'quit nil)))
+
+(defun openssl-cipher--encrypt-file (password input output algorithm encrypt-p &rest args)
+  (apply
+   'openssl-cipher--invoke
+   password
+   "enc"
+   (concat "-" (or algorithm openssl-cipher-algorithm))
+   (if encrypt-p "-e" "-d")
+   "-in" input
+   "-out" output
+   args))
+
+(defun openssl-cipher--call/string (input algorithm encrypt-p &optional pass &rest args)
+  (let ((out (openssl-cipher--create-temp-file)))
+    (unwind-protect
+        (let ((in (openssl-cipher--create-temp-binary input)))
+          (unwind-protect
+              (let ((code (apply 'openssl-cipher--encrypt-file
+                                 pass in out algorithm encrypt-p args)))
+                (unless (= code 0)
+                  (error "Command failed exit"))
+                (openssl-cipher--file-unibytes out))
+            (openssl-cipher--purge-temp in)))
+      (openssl-cipher--purge-temp out))))
+
+(defun openssl-cipher--check-unibyte-vector (vector)
+  (mapconcat
+   (lambda (x)
+     (unless (and (numberp x)(<= 0 x) (<= x 255))
+       (error "Invalid unibyte vector"))
+     (format "%02x" x))
+   vector ""))
+
+(defun openssl-cipher--validate-input-bytes (input)
+  (cond
+   ((vectorp input)
+    (openssl-cipher--check-unibyte-vector input))
+   ((and (stringp input)
+         (string-match "\\`[0-9a-fA-F][0-9a-fA-F]+\\'" input))
+    input)
+   ((and (stringp input)
+         (not (multibyte-string-p input)))
+    (mapconcat (lambda (x) (format "%02x" x)) input ""))
+   ((eq input nil)
+    "")
+   (t
+    (error "Not supported unibytes format"))))
 
 ;;;
 ;;; User interface
@@ -188,15 +224,8 @@
 `openssl-cipher-decrypt-unibytes'"
   (when (multibyte-string-p unibyte-string)
     (error "Multibyte string is not supported"))
-  (let ((out (openssl-cipher--create-temp-file)))
-    (unwind-protect
-        (let ((in (openssl-cipher--create-temp-binary unibyte-string)))
-          (unwind-protect
-              (progn
-                (openssl-cipher--encrypt in out algorithm)
-                (openssl-cipher--file-unibytes out))
-            (openssl-cipher--purge-temp in)))
-      (openssl-cipher--purge-temp out))))
+  (let ((pass (openssl-cipher--read-passwd t)))
+    (openssl-cipher--call/string unibyte-string algorithm t pass)))
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
@@ -204,15 +233,8 @@
 `openssl-cipher-encrypt-unibytes'"
   (unless (stringp encrypted-string)
     (error "Not a encrypted string"))
-  (let ((in (openssl-cipher--create-temp-binary encrypted-string)))
-    (unwind-protect
-        (let ((out (openssl-cipher--create-temp-file)))
-          (unwind-protect
-              (progn
-                (openssl-cipher--decrypt in out algorithm)
-                (openssl-cipher--file-unibytes out))
-            (openssl-cipher--purge-temp out)))
-      (openssl-cipher--purge-temp in))))
+  (let ((pass (openssl-cipher--read-passwd)))
+    (openssl-cipher--call/string encrypted-string algorithm nil pass)))
 
 ;;;###autoload
 (defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
@@ -233,15 +255,18 @@ TODO"
    (openssl-cipher-decrypt-unibytes encrypted algorithm)
    (or coding-system openssl-cipher-string-encoding)))
 
+;;TODO not yet tested save-file
 ;;;###autoload
 (defun openssl-cipher-encrypt-file (file &optional algorithm save-file)
   "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'
-TODO"
+TODO
+todo about mtime keeping mtime"
   (openssl-cipher--check-save-file save-file)
-  (openssl-cipher--call/io-file
-   file
-   (lambda (input output)
-     (openssl-cipher--encrypt input output algorithm)))
+  (let ((pass (openssl-cipher--read-passwd t)))
+    (openssl-cipher--call/io-file
+     file
+     (lambda (input output)
+       (openssl-cipher--encrypt-file pass input output algorithm t))))
   ;;TODO keep FILE?
   (when save-file
     (rename-file file save-file t)))
@@ -249,15 +274,47 @@ TODO"
 ;;;###autoload
 (defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'
-TODO"
+TODO
+todo about mtime keeping mtime"
   (openssl-cipher--check-save-file save-file)
-  (openssl-cipher--call/io-file
-   file
-   (lambda (input output)
-     (openssl-cipher--decrypt input output algorithm)))
+  (let ((pass (openssl-cipher--read-passwd)))
+    (openssl-cipher--call/io-file
+     file
+     (lambda (input output)
+       (openssl-cipher--encrypt-file pass input output algorithm nil))))
   ;;TODO keep FILE?
   (when save-file
     (rename-file file save-file t)))
+
+;;TODO
+;;;###autoload
+(defun openssl-cipher-encrypt (unibyte-string key-input &optional iv-input algorithm)
+  "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
+`openssl-cipher-decrypt-unibytes'"
+  (when (multibyte-string-p unibyte-string)
+    (error "Multibyte string is not supported"))
+  (let ((key (openssl-cipher--validate-input-bytes key-input))
+        (iv (openssl-cipher--validate-input-bytes iv-input)))
+    (apply 'openssl-cipher--call/string
+           unibyte-string algorithm t nil
+           `(
+             "-K" ,key
+             "-iv" ,iv))))
+
+;;TODO
+;;;###autoload
+(defun openssl-cipher-decrypt (encrypted-string key-input &optional iv-input algorithm)
+  "Decrypt a ENCRYPTED-STRING which was encrypted by
+`openssl-cipher-encrypt-unibytes'"
+  (unless (stringp encrypted-string)
+    (error "Not a encrypted string"))
+  (let ((key (openssl-cipher--validate-input-bytes key-input))
+        (iv (openssl-cipher--validate-input-bytes iv-input)))
+    (apply 'openssl-cipher--call/string
+           encrypted-string algorithm nil nil
+           `(
+             "-K" ,key
+             "-iv" ,iv))))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
