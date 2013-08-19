@@ -57,10 +57,6 @@
 
 ;; (openssl-cipher-decrypt-string my-secret)
 
-;;; TODO:
-
-;; * retry password when failed to decrypt.
-
 ;;; Code:
 
 (defgroup openssl-cipher nil
@@ -71,7 +67,7 @@
 (defvar quit-flag)
 
 (defcustom openssl-cipher-algorithm "aes-256-cbc"
-  "Cipher algorithm to encrypt a message."
+  "Default cipher algorithm to encrypt a message."
   :group 'openssl-cipher
   :type 'string)
 
@@ -148,10 +144,12 @@
          (error "Openssl: %s" msg)))
      code)))
 
-(defvar openssl-cipher-password nil)
+(defvar openssl-cipher-password nil
+  "This is a hiding volatile parameter.
+Do not forget TODO")
 (defun openssl-cipher--read-passwd (&optional confirm)
-  ;;TODO concat new string for clear-string?
-  (or openssl-cipher-password
+  (or (and (stringp openssl-cipher-password)
+           openssl-cipher-password)
       (read-passwd "Password: " confirm)))
 
 (defun openssl-cipher-supported-types ()
@@ -170,8 +168,8 @@
 
 (defun openssl-cipher--check-save-file (file)
   (unless (or (null file)
-              (and (file-exists-p file)
-                   (y-or-n-p (format "Overwrite %s? " file))))
+              (not (file-exists-p file))
+              (y-or-n-p (format "Overwrite %s? " file)))
     ;;FIXME: should be user-error
     (signal 'quit nil)))
 
@@ -217,6 +215,8 @@
    ((and (stringp input)
          (string-match "\\`[0-9a-fA-F][0-9a-fA-F]+\\'" input))
     input)
+   ;; hex string and unibyte string is not exclusive,
+   ;; but not need to concern about it almost case.
    ((and (stringp input)
          (not (multibyte-string-p input)))
     (mapconcat (lambda (x) (format "%02x" x)) input ""))
@@ -224,6 +224,12 @@
     "")
    (t
     (error "Not supported unibytes format"))))
+
+(defun openssl-cipher--check-byte-string (string)
+  (unless (stringp string)
+    (error "Not a byte string"))
+  (when (multibyte-string-p string)
+    (error "Multibyte string is not supported")))
 
 ;;;
 ;;; User interface
@@ -233,8 +239,7 @@
 (defun openssl-cipher-encrypt-unibytes (unibyte-string &optional algorithm)
   "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
 `openssl-cipher-decrypt-unibytes'"
-  (when (multibyte-string-p unibyte-string)
-    (error "Multibyte string is not supported"))
+  (openssl-cipher--check-byte-string unibyte-string)
   (let ((pass (openssl-cipher--read-passwd t)))
     (openssl-cipher--call/string unibyte-string algorithm t pass)))
 
@@ -242,8 +247,7 @@
 (defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
 `openssl-cipher-encrypt-unibytes'"
-  (unless (stringp encrypted-string)
-    (error "Not a encrypted string"))
+  (openssl-cipher--check-byte-string encrypted-string)
   (let ((pass (openssl-cipher--read-passwd)))
     (openssl-cipher--call/string encrypted-string algorithm nil pass)))
 
@@ -251,7 +255,7 @@
 (defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
   "Encrypt a well encoded STRING to encrypted object which can be decrypted by
  `openssl-cipher-decrypt-string'.
-TODO"
+If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
   (openssl-cipher-encrypt-unibytes
    (encode-coding-string
     string (or coding-system openssl-cipher-string-encoding))
@@ -262,7 +266,7 @@ TODO"
                                       &optional coding-system algorithm)
   "Decrypt a ENCRYPTED object which was encrypted by
 `openssl-cipher-encrypt-string'
-TODO"
+If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
   (decode-coding-string
    (openssl-cipher-decrypt-unibytes encrypted algorithm)
    (or coding-system openssl-cipher-string-encoding)))
@@ -272,9 +276,11 @@ TODO"
 (defun openssl-cipher-encrypt (unibyte-string key-input
                                               &optional iv-input algorithm)
   "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
-`openssl-cipher-decrypt-unibytes'"
-  (when (multibyte-string-p unibyte-string)
-    (error "Multibyte string is not supported"))
+`openssl-cipher-decrypt-unibytes' .
+KEY-INPUT and IV-INPUT is passed with a correct format to -K and -iv.
+ Above options accept unibyte string or hex format or vector which contain only byte.
+ This may be shown in the command argument like ps command."
+  (openssl-cipher--check-byte-string unibyte-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
     (apply 'openssl-cipher--call/string
@@ -283,14 +289,14 @@ TODO"
              "-K" ,key
              "-iv" ,iv))))
 
-;;TODO add test
 ;;;###autoload
 (defun openssl-cipher-decrypt (encrypted-string key-input
                                                 &optional iv-input algorithm)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
-`openssl-cipher-encrypt-unibytes'"
-  (unless (stringp encrypted-string)
-    (error "Not a encrypted string"))
+`openssl-cipher-encrypt-unibytes' .
+
+See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'"
+  (openssl-cipher--check-byte-string encrypted-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
     (apply 'openssl-cipher--call/string
@@ -299,36 +305,40 @@ TODO"
              "-K" ,key
              "-iv" ,iv))))
 
-;;TODO not yet tested save-file
+;;TODO add test
 ;;;###autoload
 (defun openssl-cipher-encrypt-file (file &optional algorithm save-file)
   "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'
-TODO
-todo about mtime keeping mtime"
+
+If ALGORITHM is nil then use `openssl-cipher-algorithm' to encrypt.
+SAVE-FILE is a new file name of encrypted file name.
+ If this file already exists, confirm to overwrite by minibuffer prompt.
+ Do not forget to delete FILE if you do not want plain file."
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd t)))
     (openssl-cipher--call/io-file
      file
      (lambda (input output)
        (openssl-cipher--encrypt-file pass input output algorithm t))))
-  ;;TODO keep FILE?
   (when save-file
-    (rename-file file save-file t)))
+    (copy-file file save-file t t)))
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'
-TODO
-todo about mtime keeping mtime"
+
+If ALGORITHM is nil then use `openssl-cipher-algorithm' to decrypt.
+SAVE-FILE is a new file name of decrypted file name.
+ If this file already exists, confirm to overwrite by minibuffer prompt.
+ Do not forget to delete FILE if you do not want encrypted file."
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd)))
     (openssl-cipher--call/io-file
      file
      (lambda (input output)
        (openssl-cipher--encrypt-file pass input output algorithm nil))))
-  ;;TODO keep FILE?
   (when save-file
-    (rename-file file save-file t)))
+    (copy-file file save-file t t)))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
