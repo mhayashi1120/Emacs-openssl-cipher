@@ -34,22 +34,44 @@
                      (openssl-cipher-decrypt-string E)) "test マルチバイト文字"))))
 
 (ert-deftest openssl-cipher-with-algorithm ()
-  ""
+  "Encrypt/Decrypt some of algorithms.
+Some of algorithms are not working fine although."
   :tags '(openssl-cipher)
-  (dolist (a '("aes-256-ecb" "aes-256-cbc" "aes-256-ctr"
-               "aes-256-ofb" "aes-256-cfb" "aes-256-cfb1"
-               "aes-256-cfb8"
-               ;; seems not work
-               ;; "aes-256-gcm"
-               ))
+  (dolist (a (openssl-cipher-supported-types))
     (let ((func (lambda (value key iv algo)
-                  (should (equal value
-                                 (openssl-cipher-decrypt
-                                  (openssl-cipher-encrypt value key iv algo)
-                                  key iv algo))))))
+                  (princ (format "Checking algorithm `%s'" algo))
+                  (let* ((E (openssl-cipher-encrypt value key iv algo))
+                         (M (condition-case err
+                                (openssl-cipher-decrypt E key iv algo)
+                              (error err))))
+                    (cond
+                     ((consp M)
+                      (princ (format " => NG %s" M)))
+                     ((stringp M)
+                      (if (equal value M)
+                          (princ " => OK")
+                        (princ " => NG"))))
+                    (princ "\n")))))
       (funcall func "a" [255] [0] a)
       (funcall func "a" "a" "a" a)
       (funcall func "a" "00" "a" a))))
+
+(ert-deftest openssl-cipher-validate-bytes ()
+  "Check validation IV/KEY input"
+  :tags '(openssl-cipher)
+  (should (openssl-cipher-encrypt "a" nil))
+  (should (openssl-cipher-encrypt "a" [1]))
+  ;; invalid byte range of vector
+  (should-error (openssl-cipher-encrypt "a" [-1]))
+  ;; invalid byte range of vector
+  (should-error (openssl-cipher-encrypt "a" [256]))
+  ;; unibyte vector
+  (should (openssl-cipher-encrypt "a" [0] [0]))
+  ;; hex string
+  (should (openssl-cipher-encrypt "a" "0"))
+  ;; unibyte string (Not exclusive with hex string)
+  (should (openssl-cipher-encrypt "a" "\000"))
+  (should-error (openssl-cipher-encrypt "a" "あ")))
 
 
 (ert-deftest openssl-cipher-file ()

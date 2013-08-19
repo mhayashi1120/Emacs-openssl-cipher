@@ -98,15 +98,14 @@
 (defun openssl-cipher--call/io-file (input output function)
   (let* ((in-file (expand-file-name input))
          (output-file (expand-file-name output))
-         (time (nth 5 (file-attributes in-file)))
+         (mtime (nth 5 (file-attributes in-file)))
          (same-filep (equal in-file output-file))
          (out-file (or (and (not same-filep) output-file)
                      (openssl-cipher--create-temp-file))))
     (condition-case err
         (progn
           (funcall function out-file)
-          ;;TODO keep-time?
-          (set-file-times out-file time)
+          (set-file-times out-file mtime)
           (when same-filep
             (openssl-cipher--purge-file in-file)
             (rename-file out-file in-file)))
@@ -152,8 +151,10 @@
      code)))
 
 (defvar openssl-cipher-password nil
-  "This is a hiding volatile parameter.
-Do not forget TODO")
+  "To suppress the password prompt while Encryption/Decryption.
+This is a hiding, volatile parameter. This variable contents will
+be cleared after a Encryption/Decryption.")
+
 (defun openssl-cipher--read-passwd (&optional confirm)
   (or (and (stringp openssl-cipher-password)
            openssl-cipher-password)
