@@ -30,11 +30,17 @@
 
 ;;; Usage:
 
-;; * To encode a well encoded string (High level API)
+;; * To encrypt a well encoded string (High level API)
 ;; `openssl-cipher-encrypt-string' <-> `openssl-cipher-decrypt-string'
 ;;
-;; * To encode a binary string (Low level API)
+;; * To encrypt a binary string (Middle level API)
 ;; `openssl-cipher-encrypt-unibytes' <-> `openssl-cipher-decrypt-unibytes'
+
+;; * To encrypt a binary string (Low level API)
+;; `openssl-cipher-encrypt' <-> `openssl-cipher-decrypt'
+
+;; * To encrypt a file
+;; `openssl-cipher-encrypt-file' <-> `openssl-cipher-decrypt-file'
 
 ;;; Sample:
 
@@ -137,7 +143,9 @@
        (clear-string pass))
      (unless (= (buffer-size) 0)
        (goto-char (point-min))
-       (error "Openssl: %s" (buffer-substring-no-properties (point-min) (point-at-eol))))
+       (let ((msg (buffer-substring-no-properties
+                   (point-min) (point-at-eol))))
+         (error "Openssl: %s" msg)))
      code)))
 
 (defvar openssl-cipher-password nil)
@@ -167,18 +175,21 @@
     ;;FIXME: should be user-error
     (signal 'quit nil)))
 
-(defun openssl-cipher--encrypt-file (password input output algorithm encrypt-p &rest args)
+(defun openssl-cipher--encrypt-file (password in-file out-file
+                                              algorithm encrypt-p
+                                              &rest args)
   (apply
    'openssl-cipher--invoke
    password
    "enc"
    (concat "-" (or algorithm openssl-cipher-algorithm))
    (if encrypt-p "-e" "-d")
-   "-in" input
-   "-out" output
+   "-in" in-file
+   "-out" out-file
    args))
 
-(defun openssl-cipher--call/string (input algorithm encrypt-p &optional pass &rest args)
+(defun openssl-cipher--call/string (input algorithm encrypt-p
+                                          &optional pass &rest args)
   (let ((out (openssl-cipher--create-temp-file)))
     (unwind-protect
         (let ((in (openssl-cipher--create-temp-binary input)))
@@ -247,13 +258,46 @@ TODO"
    algorithm))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt-string (encrypted &optional coding-system algorithm)
+(defun openssl-cipher-decrypt-string (encrypted
+                                      &optional coding-system algorithm)
   "Decrypt a ENCRYPTED object which was encrypted by
 `openssl-cipher-encrypt-string'
 TODO"
   (decode-coding-string
    (openssl-cipher-decrypt-unibytes encrypted algorithm)
    (or coding-system openssl-cipher-string-encoding)))
+
+;;TODO add test
+;;;###autoload
+(defun openssl-cipher-encrypt (unibyte-string key-input
+                                              &optional iv-input algorithm)
+  "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
+`openssl-cipher-decrypt-unibytes'"
+  (when (multibyte-string-p unibyte-string)
+    (error "Multibyte string is not supported"))
+  (let ((key (openssl-cipher--validate-input-bytes key-input))
+        (iv (openssl-cipher--validate-input-bytes iv-input)))
+    (apply 'openssl-cipher--call/string
+           unibyte-string algorithm t nil
+           `(
+             "-K" ,key
+             "-iv" ,iv))))
+
+;;TODO add test
+;;;###autoload
+(defun openssl-cipher-decrypt (encrypted-string key-input
+                                                &optional iv-input algorithm)
+  "Decrypt a ENCRYPTED-STRING which was encrypted by
+`openssl-cipher-encrypt-unibytes'"
+  (unless (stringp encrypted-string)
+    (error "Not a encrypted string"))
+  (let ((key (openssl-cipher--validate-input-bytes key-input))
+        (iv (openssl-cipher--validate-input-bytes iv-input)))
+    (apply 'openssl-cipher--call/string
+           encrypted-string algorithm nil nil
+           `(
+             "-K" ,key
+             "-iv" ,iv))))
 
 ;;TODO not yet tested save-file
 ;;;###autoload
@@ -285,36 +329,6 @@ todo about mtime keeping mtime"
   ;;TODO keep FILE?
   (when save-file
     (rename-file file save-file t)))
-
-;;TODO
-;;;###autoload
-(defun openssl-cipher-encrypt (unibyte-string key-input &optional iv-input algorithm)
-  "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
-`openssl-cipher-decrypt-unibytes'"
-  (when (multibyte-string-p unibyte-string)
-    (error "Multibyte string is not supported"))
-  (let ((key (openssl-cipher--validate-input-bytes key-input))
-        (iv (openssl-cipher--validate-input-bytes iv-input)))
-    (apply 'openssl-cipher--call/string
-           unibyte-string algorithm t nil
-           `(
-             "-K" ,key
-             "-iv" ,iv))))
-
-;;TODO
-;;;###autoload
-(defun openssl-cipher-decrypt (encrypted-string key-input &optional iv-input algorithm)
-  "Decrypt a ENCRYPTED-STRING which was encrypted by
-`openssl-cipher-encrypt-unibytes'"
-  (unless (stringp encrypted-string)
-    (error "Not a encrypted string"))
-  (let ((key (openssl-cipher--validate-input-bytes key-input))
-        (iv (openssl-cipher--validate-input-bytes iv-input)))
-    (apply 'openssl-cipher--call/string
-           encrypted-string algorithm nil nil
-           `(
-             "-K" ,key
-             "-iv" ,iv))))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
