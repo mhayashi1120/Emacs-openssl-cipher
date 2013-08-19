@@ -95,22 +95,29 @@
       (insert-file-contents file))
     (buffer-string)))
 
-(defun openssl-cipher--call/io-file (input function)
-  (let ((time (nth 5 (file-attributes input))))
-    (let ((output (openssl-cipher--create-temp-file)))
-      (condition-case err
-          (progn
-            (funcall function input output)
-            (openssl-cipher--purge-temp input)
-            (rename-file output input)
-            (set-file-times input time))
-        (error
-         (ignore-errors (openssl-cipher--purge-temp output))
-         (signal (car err) (cdr err)))))))
+(defun openssl-cipher--call/io-file (input output function)
+  (let* ((in-file (expand-file-name input))
+         (output-file (expand-file-name output))
+         (time (nth 5 (file-attributes in-file)))
+         (same-filep (equal in-file output-file))
+         (out-file (or (and (not same-filep) output-file)
+                     (openssl-cipher--create-temp-file))))
+    (condition-case err
+        (progn
+          (funcall function out-file)
+          ;;TODO keep-time?
+          (set-file-times out-file time)
+          (when same-filep
+            (openssl-cipher--purge-file in-file)
+            (rename-file out-file in-file)))
+      (error
+       (openssl-cipher--purge-file out-file)
+       (signal (car err) (cdr err))))))
 
-(defun openssl-cipher--purge-temp (file)
+(defun openssl-cipher--purge-file (file)
   (let (delete-by-moving-to-trash)
-    (delete-file file)))
+    (when (file-exists-p file)
+      (delete-file file))))
 
 (defun openssl-cipher--create-temp-file ()
   (let ((file (make-temp-file "openssl-cipher-")))
@@ -197,8 +204,8 @@ Do not forget TODO")
                 (unless (= code 0)
                   (error "Command failed exit"))
                 (openssl-cipher--file-unibytes out))
-            (openssl-cipher--purge-temp in)))
-      (openssl-cipher--purge-temp out))))
+            (openssl-cipher--purge-file in)))
+      (openssl-cipher--purge-file out))))
 
 (defun openssl-cipher--check-unibyte-vector (vector)
   (mapconcat
@@ -271,7 +278,6 @@ If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
    (openssl-cipher-decrypt-unibytes encrypted algorithm)
    (or coding-system openssl-cipher-string-encoding)))
 
-;;TODO add test
 ;;;###autoload
 (defun openssl-cipher-encrypt (unibyte-string key-input
                                               &optional iv-input algorithm)
@@ -305,7 +311,6 @@ See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'"
              "-K" ,key
              "-iv" ,iv))))
 
-;;TODO add test
 ;;;###autoload
 (defun openssl-cipher-encrypt-file (file &optional algorithm save-file)
   "Encrypt a FILE which can be decrypted by `openssl-cipher-decrypt-file'
@@ -317,11 +322,9 @@ SAVE-FILE is a new file name of encrypted file name.
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd t)))
     (openssl-cipher--call/io-file
-     file
-     (lambda (input output)
-       (openssl-cipher--encrypt-file pass input output algorithm t))))
-  (when save-file
-    (copy-file file save-file t t)))
+     file (or save-file file)
+     (lambda (output)
+       (openssl-cipher--encrypt-file pass file output algorithm t)))))
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
@@ -334,11 +337,9 @@ SAVE-FILE is a new file name of decrypted file name.
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd)))
     (openssl-cipher--call/io-file
-     file
-     (lambda (input output)
-       (openssl-cipher--encrypt-file pass input output algorithm nil))))
-  (when save-file
-    (copy-file file save-file t t)))
+     file (or save-file file)
+     (lambda (output)
+       (openssl-cipher--encrypt-file pass file output algorithm nil)))))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
