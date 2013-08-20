@@ -4,7 +4,7 @@
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
 ;; Emacs: GNU Emacs 22 or later
-;; Version 0.7.0
+;; Version 0.7.1
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -63,8 +63,6 @@
   "Emacs openssl cipher interface."
   :group 'applications
   :prefix "openssl-cipher-")
-
-(defvar quit-flag)
 
 (defcustom openssl-cipher-algorithm "aes-256-cbc"
   "Default cipher algorithm to encrypt a message."
