@@ -4,7 +4,7 @@
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher/raw/master/openssl-cipher.el
 ;; Emacs: GNU Emacs 22 or later
-;; Version 0.7.1
+;; Version 0.7.2
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -56,6 +56,9 @@
 ;; * To decrypt `my-secret'
 
 ;; (openssl-cipher-decrypt-string my-secret)
+
+;;; TODO:
+;; * should not use temporary file?
 
 ;;; Code:
 
@@ -112,8 +115,11 @@
        (signal (car err) (cdr err))))))
 
 (defun openssl-cipher--purge-file (file)
-  (let (delete-by-moving-to-trash)
-    (when (file-exists-p file)
+  (when (file-exists-p file)
+    (let ((size (nth 7 (file-attributes file))))
+      (let ((coding-system-for-write 'binary))
+        (write-region (make-string size 0) nil file nil 'no-msg)))
+    (let (delete-by-moving-to-trash)
       (delete-file file))))
 
 (defun openssl-cipher--create-temp-file ()
@@ -141,7 +147,7 @@
    (let ((code (apply 'call-process openssl-cipher-command nil t nil args)))
      (when pass
        (clear-string pass))
-     (unless (= (buffer-size) 0)
+     (unless (= code 0)
        (goto-char (point-min))
        (let ((msg (buffer-substring-no-properties
                    (point-min) (point-at-eol))))
@@ -198,10 +204,9 @@ be cleared after a Encryption/Decryption.")
     (unwind-protect
         (let ((in (openssl-cipher--create-temp-binary input)))
           (unwind-protect
-              (let ((code (apply 'openssl-cipher--encrypt-file
-                                 pass in out algorithm encrypt-p args)))
-                (unless (= code 0)
-                  (error "Command failed exit"))
+              (progn
+                (apply 'openssl-cipher--encrypt-file
+                       pass in out algorithm encrypt-p args)
                 (openssl-cipher--file-unibytes out))
             (openssl-cipher--purge-file in)))
       (openssl-cipher--purge-file out))))
