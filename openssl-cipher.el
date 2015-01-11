@@ -21,7 +21,7 @@
 ;; Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
 ;; Boston, MA 02110-1301, USA.
 
-;;; Install:
+;; ## Install:
 
 ;; 1. Install `openssl' command to your system by
 ;;  apt, yum... whatever you desire.
@@ -33,7 +33,7 @@
 ;;
 ;;     (require 'openssl-cipher)
 
-;;; Usage:
+;; ## Usage:
 
 ;; ** To encrypt a well encoded string (High level API)
 ;;
@@ -51,7 +51,7 @@
 ;;
 ;;  `openssl-cipher-encrypt-file' <-> `openssl-cipher-decrypt-file'
 
-;;; Sample:
+;; ## Sample:
 
 ;; ** To encrypt my secret
 ;;  Please ensure that do not forget `clear-string' you want to hide.

@@ -1,19 +1,19 @@
 openssl-cipher.el
 =================
 
-* Install:
+## Install:
 
 1. Install `openssl' command to your system by
-  apt, yum... whatever you desire.
+ apt, yum... whatever you desire.
 
-  Source code: http://www.openssl.org/source/
+ Source code: http://www.openssl.org/source/
 
 2. Put this file into load-path'ed directory, and byte compile it
-  if desired. And put the following expression into your ~/.emacs.
+ if desired. And put the following expression into your ~/.emacs.
 
-     (require 'openssl-cipher)
+    (require 'openssl-cipher)
 
-* Usage:
+## Usage:
 
 ** To encrypt a well encoded string (High level API)
 
@@ -31,10 +31,10 @@ openssl-cipher.el
 
  `openssl-cipher-encrypt-file' <-> `openssl-cipher-decrypt-file'
 
-* Sample:
+## Sample:
 
 ** To encrypt my secret
-  Please ensure that do not forget `clear-string' you want to hide.
+ Please ensure that do not forget `clear-string' you want to hide.
 
     (defvar my-secret nil)
 
