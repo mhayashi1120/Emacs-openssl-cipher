@@ -1,10 +1,10 @@
-;;; openssl-cipher.el --- Encrypt/Decrypt string with password by openssl.
+;;; openssl-cipher.el --- Encrypt/Decrypt string with password by openssl
 
 ;; Author: Masahiro Hayashi <mhayashi1120@gmail.com>
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher
 ;; Emacs: GNU Emacs 22 or later
-;; Version 0.7.4
+;; Version: 0.7.4
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -110,7 +110,7 @@
       (insert-file-contents file))
     (buffer-string)))
 
-(defun openssl-cipher--call/io-file (input output function)
+(defun openssl-cipher--call-with-io-file (input output function)
   (let* ((in-file (expand-file-name input))
          (output-file (expand-file-name output))
          (mtime (nth 5 (file-attributes in-file)))
@@ -179,11 +179,11 @@ be cleared after a Encryption/Decryption.")
       (read-passwd "Password: " confirm)))
 
 (defun openssl-cipher-supported-types ()
-  (or (openssl-cipher-supported-types:0002)
-      (openssl-cipher-supported-types:0001)
+  (or (openssl-cipher--supported-types0002)
+      (openssl-cipher--supported-types0001)
       (error "Unable parse supported ciphers")))
 
-(defun openssl-cipher-supported-types:0002 ()
+(defun openssl-cipher--supported-types0002 ()
   (openssl-cipher--with-env
    ;; this return non-zero value with succeeded
    (call-process openssl-cipher-command nil t nil "enc" "-list")
@@ -197,7 +197,7 @@ be cleared after a Encryption/Decryption.")
                            args)))
        (delq nil algos)))))
 
-(defun openssl-cipher-supported-types:0001 ()
+(defun openssl-cipher--supported-types0001 ()
   (openssl-cipher--with-env
    ;; this return non-zero value with succeeded
    (call-process openssl-cipher-command nil t nil "enc" "help")
@@ -231,7 +231,7 @@ be cleared after a Encryption/Decryption.")
    "-out" out-file
    args))
 
-(defun openssl-cipher--call/string (input algorithm encrypt-p
+(defun openssl-cipher--call-with-string (input algorithm encrypt-p
                                           &optional pass &rest args)
   (let ((out (openssl-cipher--create-temp-file)))
     (unwind-protect
@@ -285,7 +285,7 @@ be cleared after a Encryption/Decryption.")
 `openssl-cipher-decrypt-unibytes'"
   (openssl-cipher--check-byte-string unibyte-string)
   (let ((pass (openssl-cipher--read-passwd t)))
-    (openssl-cipher--call/string unibyte-string algorithm t pass)))
+    (openssl-cipher--call-with-string unibyte-string algorithm t pass)))
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
@@ -293,7 +293,7 @@ be cleared after a Encryption/Decryption.")
 `openssl-cipher-encrypt-unibytes'"
   (openssl-cipher--check-byte-string encrypted-string)
   (let ((pass (openssl-cipher--read-passwd)))
-    (openssl-cipher--call/string encrypted-string algorithm nil pass)))
+    (openssl-cipher--call-with-string encrypted-string algorithm nil pass)))
 
 ;;;###autoload
 (defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
@@ -326,7 +326,7 @@ KEY-INPUT and IV-INPUT is passed with a correct format to -K and -iv.
   (openssl-cipher--check-byte-string unibyte-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
-    (apply 'openssl-cipher--call/string
+    (apply 'openssl-cipher--call-with-string
            unibyte-string algorithm t nil
            `(
              "-K" ,key
@@ -342,7 +342,7 @@ See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'"
   (openssl-cipher--check-byte-string encrypted-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
-    (apply 'openssl-cipher--call/string
+    (apply 'openssl-cipher--call-with-string
            encrypted-string algorithm nil nil
            `(
              "-K" ,key
@@ -358,7 +358,7 @@ SAVE-FILE is a new file name of encrypted file name.
  Do not forget to delete FILE if you do not want plain file."
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd t)))
-    (openssl-cipher--call/io-file
+    (openssl-cipher--call-with-io-file
      file (or save-file file)
      (lambda (output)
        (openssl-cipher--encrypt-file pass file output algorithm t)))))
@@ -373,7 +373,7 @@ SAVE-FILE is a new file name of decrypted file name.
  Do not forget to delete FILE if you do not want encrypted file."
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd)))
-    (openssl-cipher--call/io-file
+    (openssl-cipher--call-with-io-file
      file (or save-file file)
      (lambda (output)
        (openssl-cipher--encrypt-file pass file output algorithm nil)))))
