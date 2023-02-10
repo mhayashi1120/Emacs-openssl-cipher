@@ -179,18 +179,37 @@ be cleared after a Encryption/Decryption.")
       (read-passwd "Password: " confirm)))
 
 (defun openssl-cipher-supported-types ()
+  (or (openssl-cipher-supported-types:0002)
+      (openssl-cipher-supported-types:0001)
+      (error "Unable parse supported ciphers")))
+
+(defun openssl-cipher-supported-types:0002 ()
+  (openssl-cipher--with-env
+   ;; this return non-zero value with succeeded
+   (call-process openssl-cipher-command nil t nil "enc" "-list")
+   (goto-char (point-min))
+   (when (re-search-forward "^Supported ciphers" nil t)
+     (let* ((text (buffer-substring (point) (point-max)))
+            (args (split-string text "[ \t\n]" t))
+            (algos (mapcar (lambda (a)
+                             (and (string-match "\\`-\\(.*\\)" a)
+                                  (match-string 1 a)))
+                           args)))
+       (delq nil algos)))))
+
+(defun openssl-cipher-supported-types:0001 ()
   (openssl-cipher--with-env
    ;; this return non-zero value with succeeded
    (call-process openssl-cipher-command nil t nil "enc" "help")
    (goto-char (point-min))
-   (unless (re-search-forward "^Cipher Types" nil t)
-     (error "Unable parse supported types"))
-   (let* ((text (buffer-substring (point) (point-max)))
-          (args (split-string text "[ \t\n]" t))
-          (algos (mapcar (lambda (a)
-                           (and (string-match "\\`-\\(.*\\)" a)
-                                (match-string 1 a))) args)))
-     (delq nil algos))))
+   (when (re-search-forward "^Cipher Types" nil t)
+     (let* ((text (buffer-substring (point) (point-max)))
+            (args (split-string text "[ \t\n]" t))
+            (algos (mapcar (lambda (a)
+                             (and (string-match "\\`-\\(.*\\)" a)
+                                  (match-string 1 a)))
+                           args)))
+       (delq nil algos)))))
 
 (defun openssl-cipher--check-save-file (file)
   (unless (or (null file)
@@ -302,8 +321,8 @@ If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
   "Encrypt a UNIBYTE-STRING to encrypted object which can be decrypted by
 `openssl-cipher-decrypt-unibytes' .
 KEY-INPUT and IV-INPUT is passed with a correct format to -K and -iv.
- Above options accept unibyte string or hex format or vector which contain only byte.
- This may be shown in the command argument like ps command."
+ Above options accept unibyte string or hex format or vector which contain
+ only byte. This may be shown in the command argument like ps command."
   (openssl-cipher--check-byte-string unibyte-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
