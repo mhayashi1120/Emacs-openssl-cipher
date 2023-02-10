@@ -179,9 +179,18 @@ be cleared after a Encryption/Decryption.")
       (read-passwd "Password: " confirm)))
 
 (defun openssl-cipher-supported-types ()
-  (or (openssl-cipher--supported-types0002)
-      (openssl-cipher--supported-types0001)
-      (error "Unable parse supported ciphers")))
+  (delq
+   nil
+   (mapcar
+    (lambda (a)
+      (cond
+       ((or (string-match "wrap$" a)
+            (string-match "-wrap-" a))
+        nil)
+       (t a)))
+    (or (openssl-cipher--supported-types0002)
+        (openssl-cipher--supported-types0001)
+        (error "Unable parse supported ciphers")))))
 
 (defun openssl-cipher--supported-types0002 ()
   (openssl-cipher--with-env
