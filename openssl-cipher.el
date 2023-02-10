@@ -117,7 +117,7 @@
          (mtime (nth 5 (file-attributes in-file)))
          (same-filep (equal in-file output-file))
          (out-file (or (and (not same-filep) output-file)
-                     (openssl-cipher--create-temp-file))))
+                       (openssl-cipher--create-temp-file))))
     (condition-case err
         (progn
           (funcall function out-file)
@@ -186,7 +186,10 @@ be cleared after a Encryption/Decryption.")
 
 (defun openssl-cipher--supported-types0002 ()
   (openssl-cipher--with-env
-   (when (equal (call-process openssl-cipher-command nil t nil "list" "-cipher-commands") 0)
+   (when (equal (call-process
+                 openssl-cipher-command nil t nil
+                 "list" "-cipher-commands")
+                0)
      (let* ((text (buffer-substring (point-min) (point-max)))
             (algos (split-string text "[ \t\n]" t)))
        (delq nil algos)))))
@@ -213,8 +216,11 @@ be cleared after a Encryption/Decryption.")
     (signal 'quit nil)))
 
 (defun openssl-cipher--encrypt-file (password in-file out-file
-                                              algorithm encrypt-p
+                                              algorithm encrypt-p _properties
                                               &rest args)
+  ;; TODO, FIXME: Resotre previous `openssl` encryption behavior. 
+  ;; Version 1.1.1 warn the default argument although.
+  (setq args (append args (list "-md" "md5")))
   (apply
    #'openssl-cipher--invoke
    password
@@ -225,15 +231,15 @@ be cleared after a Encryption/Decryption.")
    "-out" out-file
    args))
 
-(defun openssl-cipher--call-with-string (input algorithm encrypt-p
-                                          &optional pass &rest args)
+(defun openssl-cipher--call-with-string (input algorithm encrypt-p properties
+                                               &optional pass &rest args)
   (let ((out (openssl-cipher--create-temp-file)))
     (unwind-protect
         (let ((in (openssl-cipher--create-temp-binary input)))
           (unwind-protect
               (progn
                 (apply #'openssl-cipher--encrypt-file
-                       pass in out algorithm encrypt-p args)
+                       pass in out algorithm encrypt-p properties args)
                 (openssl-cipher--file-unibytes out))
             (openssl-cipher--purge-file in)))
       (openssl-cipher--purge-file out))))
@@ -251,6 +257,7 @@ be cleared after a Encryption/Decryption.")
    ((vectorp input)
     (openssl-cipher--check-unibyte-vector input))
    ((and (stringp input)
+         ;; TODO suspicous. should replace \\{2,\\}
          (string-match "\\`[0-9a-fA-F][0-9a-fA-F]+\\'" input))
     input)
    ;; hex string and unibyte string is not exclusive,
@@ -279,15 +286,18 @@ be cleared after a Encryption/Decryption.")
 `openssl-cipher-decrypt-unibytes'"
   (openssl-cipher--check-byte-string unibyte-string)
   (let ((pass (openssl-cipher--read-passwd t)))
-    (openssl-cipher--call-with-string unibyte-string algorithm t pass)))
+    (openssl-cipher--call-with-string unibyte-string algorithm t nil pass)))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt-unibytes (encrypted-string &optional algorithm)
+(defun openssl-cipher-decrypt-unibytes (encrypted-string
+                                        &optional algorithm
+                                        &rest _keywords)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
 `openssl-cipher-encrypt-unibytes'"
   (openssl-cipher--check-byte-string encrypted-string)
   (let ((pass (openssl-cipher--read-passwd)))
-    (openssl-cipher--call-with-string encrypted-string algorithm nil pass)))
+    (openssl-cipher--call-with-string
+     encrypted-string algorithm nil nil pass)))
 
 ;;;###autoload
 (defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
@@ -301,12 +311,13 @@ If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-string (encrypted
-                                      &optional coding-system algorithm)
+                                      &optional coding-system algorithm
+                                      &rest keywords)
   "Decrypt a ENCRYPTED object which was encrypted by
 `openssl-cipher-encrypt-string'
 If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
   (decode-coding-string
-   (openssl-cipher-decrypt-unibytes encrypted algorithm)
+   (apply #'openssl-cipher-decrypt-unibytes encrypted algorithm keywords)
    (or coding-system openssl-cipher-string-encoding)))
 
 ;;;###autoload
@@ -321,14 +332,17 @@ KEY-INPUT and IV-INPUT is passed with a correct format to -K and -iv.
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
     (apply #'openssl-cipher--call-with-string
-           unibyte-string algorithm t nil
+           unibyte-string algorithm t nil nil
            `(
              "-K" ,key
              "-iv" ,iv))))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt (encrypted-string key-input
-                                                &optional iv-input algorithm)
+(defun openssl-cipher-decrypt
+    (encrypted-string key-input
+                      &optional
+                      iv-input algorithm
+                      &rest _keywords)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
 `openssl-cipher-encrypt-unibytes' .
 
@@ -337,7 +351,7 @@ See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'"
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
     (apply #'openssl-cipher--call-with-string
-           encrypted-string algorithm nil nil
+           encrypted-string algorithm nil nil nil
            `(
              "-K" ,key
              "-iv" ,iv))))
@@ -355,22 +369,24 @@ SAVE-FILE is a new file name of encrypted file name.
     (openssl-cipher--call-with-io-file
      file (or save-file file)
      (lambda (output)
-       (openssl-cipher--encrypt-file pass file output algorithm t)))))
+       (openssl-cipher--encrypt-file pass file output algorithm t nil)))))
 
 ;;;###autoload
-(defun openssl-cipher-decrypt-file (file &optional algorithm save-file)
+(defun openssl-cipher-decrypt-file (file &optional algorithm save-file
+                                         &rest _keywords)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'
 
 If ALGORITHM is nil then use `openssl-cipher-algorithm' to decrypt.
 SAVE-FILE is a new file name of decrypted file name.
  If this file already exists, confirm to overwrite by minibuffer prompt.
- Do not forget to delete FILE if you do not want encrypted file."
+ Do not forget to delete FILE if you do not want encrypted file.
+"
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd)))
     (openssl-cipher--call-with-io-file
      file (or save-file file)
      (lambda (output)
-       (openssl-cipher--encrypt-file pass file output algorithm nil)))))
+       (openssl-cipher--encrypt-file pass file output algorithm nil nil)))))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
