@@ -179,33 +179,16 @@ be cleared after a Encryption/Decryption.")
            openssl-cipher-password)
       (read-passwd "Password: " confirm)))
 
-(defun openssl-cipher-supported-types (&optional all)
-  (delq
-   nil
-   (mapcar
-    (lambda (a)
-      (cond
-       (all a)
-       ((or (string-match "wrap$" a)
-            (string-match "-wrap-" a))
-        nil)
-       (t a)))
-    (or (openssl-cipher--supported-types0002)
-        (openssl-cipher--supported-types0001)
-        (error "Unable parse supported ciphers")))))
+(defun openssl-cipher-supported-types ()
+  (or (openssl-cipher--supported-types0002)
+      (openssl-cipher--supported-types0001)
+      (error "Unable parse supported ciphers")))
 
 (defun openssl-cipher--supported-types0002 ()
   (openssl-cipher--with-env
-   ;; this return non-zero value with succeeded
-   (call-process openssl-cipher-command nil t nil "enc" "-list")
-   (goto-char (point-min))
-   (when (re-search-forward "^Supported ciphers" nil t)
-     (let* ((text (buffer-substring (point) (point-max)))
-            (args (split-string text "[ \t\n]" t))
-            (algos (mapcar (lambda (a)
-                             (and (string-match "\\`-\\(.*\\)" a)
-                                  (match-string 1 a)))
-                           args)))
+   (when (equal (call-process openssl-cipher-command nil t nil "list" "-cipher-commands") 0)
+     (let* ((text (buffer-substring (point-min) (point-max)))
+            (algos (split-string text "[ \t\n]" t)))
        (delq nil algos)))))
 
 (defun openssl-cipher--supported-types0001 ()
