@@ -13,12 +13,14 @@
     (should-error (let ((openssl-cipher-password "not pass"))
                     (openssl-cipher-decrypt-string E)))
     (should (equal (let ((openssl-cipher-password "pass"))
-                     (openssl-cipher-decrypt-unibytes E)) "abcd")))
+                     (openssl-cipher-decrypt-unibytes E))
+                   "abcd")))
   ;; ascii as unibyte string
   (let ((E (let ((openssl-cipher-password "pass"))
              (openssl-cipher-encrypt-string "abcd"))))
     (should (equal (let ((openssl-cipher-password "pass"))
-                     (openssl-cipher-decrypt-string E)) "abcd"))))
+                     (openssl-cipher-decrypt-string E))
+                   "abcd"))))
 
 (ert-deftest openssl-cipher-normal-multibyte ()
   "Normal test (for multibyte string)"
@@ -27,11 +29,13 @@
   (let ((E (let ((openssl-cipher-password "pass"))
              (openssl-cipher-encrypt-unibytes "\316\323"))))
     (should (equal (let ((openssl-cipher-password "pass"))
-                     (openssl-cipher-decrypt-unibytes E)) "\316\323")))
+                     (openssl-cipher-decrypt-unibytes E))
+                   "\316\323")))
   (let ((E (let ((openssl-cipher-password "pass"))
              (openssl-cipher-encrypt-string "test マルチバイト文字"))))
     (should (equal (let ((openssl-cipher-password "pass"))
-                     (openssl-cipher-decrypt-string E)) "test マルチバイト文字"))))
+                     (openssl-cipher-decrypt-string E))
+                   "test マルチバイト文字"))))
 
 (ert-deftest openssl-cipher-with-algorithm ()
   "Encrypt/Decrypt some of algorithms.
