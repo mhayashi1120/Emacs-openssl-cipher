@@ -1,3 +1,4 @@
+;; -*- lexical-binding: t coding: utf-8 -*-
 (require 'ert)
 
 (ert-deftest openssl-cipher-normal ()
