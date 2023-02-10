@@ -1,10 +1,11 @@
-;;; openssl-cipher.el --- Encrypt/Decrypt string with password by openssl
+;;; openssl-cipher.el --- Encrypt/Decrypt string with password by openssl -*- lexical-binding: t -*-
 
 ;; Author: Masahiro Hayashi <mhayashi1120@gmail.com>
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher
 ;; Emacs: GNU Emacs 22 or later
 ;; Version: 0.8.0
+;; Package-Requires: ((emacs "24"))
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -158,7 +159,7 @@
      (setq args (append
                  args
                  (list "-pass" (format "env:%s" "EMACS_OPENSSL_CIPHER")))))
-   (let ((code (apply 'call-process openssl-cipher-command nil t nil args)))
+   (let ((code (apply #'call-process openssl-cipher-command nil t nil args)))
      (when pass
        (clear-string pass))
      (unless (= code 0)
@@ -231,7 +232,7 @@ be cleared after a Encryption/Decryption.")
                                               algorithm encrypt-p
                                               &rest args)
   (apply
-   'openssl-cipher--invoke
+   #'openssl-cipher--invoke
    password
    "enc"
    (concat "-" (or algorithm openssl-cipher-algorithm))
@@ -247,7 +248,7 @@ be cleared after a Encryption/Decryption.")
         (let ((in (openssl-cipher--create-temp-binary input)))
           (unwind-protect
               (progn
-                (apply 'openssl-cipher--encrypt-file
+                (apply #'openssl-cipher--encrypt-file
                        pass in out algorithm encrypt-p args)
                 (openssl-cipher--file-unibytes out))
             (openssl-cipher--purge-file in)))
@@ -335,7 +336,7 @@ KEY-INPUT and IV-INPUT is passed with a correct format to -K and -iv.
   (openssl-cipher--check-byte-string unibyte-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
-    (apply 'openssl-cipher--call-with-string
+    (apply #'openssl-cipher--call-with-string
            unibyte-string algorithm t nil
            `(
              "-K" ,key
@@ -351,7 +352,7 @@ See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'"
   (openssl-cipher--check-byte-string encrypted-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
-    (apply 'openssl-cipher--call-with-string
+    (apply #'openssl-cipher--call-with-string
            encrypted-string algorithm nil nil
            `(
              "-K" ,key
