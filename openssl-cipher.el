@@ -3,7 +3,7 @@
 ;; Author: Masahiro Hayashi <mhayashi1120@gmail.com>
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher
-;; Emacs: GNU Emacs 22 or later
+;; Emacs: GNU Emacs 24 or later
 ;; Version: 0.8.0
 ;; Package-Requires: ((emacs "24"))
 
