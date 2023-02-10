@@ -179,12 +179,13 @@ be cleared after a Encryption/Decryption.")
            openssl-cipher-password)
       (read-passwd "Password: " confirm)))
 
-(defun openssl-cipher-supported-types ()
+(defun openssl-cipher-supported-types (&optional all)
   (delq
    nil
    (mapcar
     (lambda (a)
       (cond
+       (all a)
        ((or (string-match "wrap$" a)
             (string-match "-wrap-" a))
         nil)
