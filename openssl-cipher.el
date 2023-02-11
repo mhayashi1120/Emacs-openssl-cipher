@@ -257,11 +257,11 @@ be cleared after a Encryption/Decryption.")
    ((vectorp input)
     (openssl-cipher--check-unibyte-vector input))
    ((and (stringp input)
-         ;; TODO suspicous. should replace \\{2,\\}
-         (string-match "\\`[0-9a-fA-F][0-9a-fA-F]+\\'" input))
+         (string-match "\\`[0-9a-fA-F]\\{2,\\}\\'" input))
     input)
    ;; hex string and unibyte string is not exclusive,
-   ;; but not need to concern about it almost case.
+   ;; but not need to concern about it almost case since
+   ;; INPUT is key or iv randomized value.
    ((and (stringp input)
          (not (multibyte-string-p input)))
     (mapconcat (lambda (x) (format "%02x" x)) input ""))
