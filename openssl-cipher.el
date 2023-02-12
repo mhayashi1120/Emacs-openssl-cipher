@@ -4,7 +4,7 @@
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher
 ;; Emacs: GNU Emacs 24 or later
-;; Version: 0.8.0
+;; Version: 0.8.1
 ;; Package-Requires: ((emacs "24"))
 
 ;; This program is free software; you can redistribute it and/or
@@ -165,7 +165,7 @@
      (unless (= code 0)
        (goto-char (point-min))
        (let ((msg (buffer-substring-no-properties
-                   (point-min) (point-at-eol))))
+                   (point-min) (line-end-position))))
          (error "Openssl: %s" msg)))
      code)))
 
