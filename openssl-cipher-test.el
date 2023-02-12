@@ -1,6 +1,9 @@
 ;; -*- lexical-binding: t coding: utf-8 -*-
 (require 'ert)
 
+(defun openssl-cipher-test-mtime (file)
+  (ceiling (float-time (nth 5 (file-attributes file)))))
+
 (ert-deftest openssl-cipher-normal ()
   "Normal test (for ascii)"
   :tags '(openssl-cipher)
@@ -85,10 +88,10 @@ Some of algorithms are not working fine although."
   (let ((file (openssl-cipher--create-temp-binary "abcdefg")))
     (unwind-protect
         (progn
-          (let ((mtime (nth 5 (file-attributes file)))
+          (let ((mtime (openssl-cipher-test-mtime file))
                 (openssl-cipher-password (copy-sequence "a")))
             (openssl-cipher-encrypt-file file)
-            (should (equal (nth 5 (file-attributes file)) mtime)))
+            (should (equal (openssl-cipher-test-mtime  file) mtime)))
           ;; wrong password
           (let ((openssl-cipher-password (copy-sequence "d")))
             (should-error (openssl-cipher-decrypt-file file)))
@@ -105,10 +108,10 @@ Some of algorithms are not working fine although."
          (restore-file (concat file ".restore-file")))
     (unwind-protect
         (progn
-          (let ((mtime (nth 5 (file-attributes file)))
+          (let ((mtime (openssl-cipher-test-mtime file))
                 (openssl-cipher-password (copy-sequence "a")))
             (openssl-cipher-encrypt-file file nil save-file)
-            (should (equal (nth 5 (file-attributes save-file)) mtime)))
+            (should (equal (openssl-cipher-test-mtime save-file) mtime)))
           ;; wrong password
           (let ((openssl-cipher-password (copy-sequence "d")))
             (should-error (openssl-cipher-decrypt-file save-file nil restore-file)))
