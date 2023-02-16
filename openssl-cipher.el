@@ -94,6 +94,28 @@
 
 (defvar openssl-cipher-string-encoding (terminal-coding-system))
 
+(defcustom openssl-cipher-encryption-version 'latest
+  "Define this `openssl-cipher' package's default encryption behavior.
+
+Supported values are:
+`latest' : The most secure version `openssl' command recommended which this 
+    package's maintainer detected. This is default value.
+`default' : Completely default behavior of `openssl' command. No extra
+     arguments when call `openssl' command. Current version of
+     `openssl' (1.1.1n on 2023-02-16) this is same as `legacy-sha256' .
+`pbkdf2' : Use key derivation as `PBKDF2' algorithm.
+`legacy-sha256' : Already deprecated on `openssl'.
+`legacy-md5' : Already deprecated on `openssl'. This is initial version
+     of this package supported.
+"
+  :group 'openssl-cipher
+  :type '(choice
+          (const default)
+          (const latest)
+          (const pbkdf2)
+          (const legacy-sha256)
+          (const legacy-md5)))
+  
 ;;;
 ;;; inner functions
 ;;;
@@ -216,11 +238,23 @@ be cleared after a Encryption/Decryption.")
     (signal 'quit nil)))
 
 (defun openssl-cipher--encrypt-file (password in-file out-file
-                                              algorithm encrypt-p _properties
+                                              algorithm encrypt-p properties
                                               &rest args)
-  ;; TODO, FIXME: Resotre previous `openssl` encryption behavior. 
-  ;; Version 1.1.1 warn the default argument although.
-  (setq args (append args (list "-md" "md5")))
+  ;; Support misc arguents to resotre previous `openssl` encryption behavior. 
+  ;; openssl-1.1.1n warn the default argument although.
+  (cl-ecase (or (plist-get properties :version)
+                openssl-cipher-encryption-version)
+    ;; Current latest is same as `pbkdf2'
+    ((latest)
+     (setq args (append args (list "-pbkdf2"))))
+    ((default))
+    ((legacy-md5)
+     (setq args (append args (list "-md" "md5"))))
+    ((legacy-sha256)
+     (setq args (append args (list "-md" "sha256"))))
+    ((pbkdf2)
+     (setq args (append args (list "-pbkdf2")))))
+
   (apply
    #'openssl-cipher--invoke
    password
@@ -232,7 +266,8 @@ be cleared after a Encryption/Decryption.")
    args))
 
 (defun openssl-cipher--call-with-string (input algorithm encrypt-p properties
-                                               &optional pass &rest args)
+                                               &optional pass
+                                               &rest args)
   (let ((out (openssl-cipher--create-temp-file)))
     (unwind-protect
         (let ((in (openssl-cipher--create-temp-binary input)))
@@ -291,13 +326,17 @@ be cleared after a Encryption/Decryption.")
 ;;;###autoload
 (defun openssl-cipher-decrypt-unibytes (encrypted-string
                                         &optional algorithm
-                                        &rest _keywords)
+                                        &rest keywords)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
-`openssl-cipher-encrypt-unibytes'"
+`openssl-cipher-encrypt-unibytes'
+
+Supported KEYWORDS:
+  :version : Override `openssl-cipher-encryption-version' setting.
+"
   (openssl-cipher--check-byte-string encrypted-string)
   (let ((pass (openssl-cipher--read-passwd)))
     (openssl-cipher--call-with-string
-     encrypted-string algorithm nil nil pass)))
+     encrypted-string algorithm nil keywords pass)))
 
 ;;;###autoload
 (defun openssl-cipher-encrypt-string (string &optional coding-system algorithm)
@@ -315,7 +354,10 @@ If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
                                       &rest keywords)
   "Decrypt a ENCRYPTED object which was encrypted by
 `openssl-cipher-encrypt-string'
-If ALGORITHM is ommited default value is `openssl-cipher-algorithm'."
+If ALGORITHM is ommited default value is `openssl-cipher-algorithm'.
+
+KEYWORDS : Same as `openssl-cipher-decrypt-unibytes'
+"
   (decode-coding-string
    (apply #'openssl-cipher-decrypt-unibytes encrypted algorithm keywords)
    (or coding-system openssl-cipher-string-encoding)))
@@ -342,16 +384,19 @@ KEY-INPUT and IV-INPUT is passed with a correct format to -K and -iv.
     (encrypted-string key-input
                       &optional
                       iv-input algorithm
-                      &rest _keywords)
+                      &rest keywords)
   "Decrypt a ENCRYPTED-STRING which was encrypted by
 `openssl-cipher-encrypt-unibytes' .
 
-See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'"
+See more information about KEY-INPUT and IV-INPUT `openssl-cipher-encrypt'
+
+KEYWORDS : Same as `openssl-cipher-decrypt-unibytes'
+"
   (openssl-cipher--check-byte-string encrypted-string)
   (let ((key (openssl-cipher--validate-input-bytes key-input))
         (iv (openssl-cipher--validate-input-bytes iv-input)))
     (apply #'openssl-cipher--call-with-string
-           encrypted-string algorithm nil nil nil
+           encrypted-string algorithm nil keywords nil
            `(
              "-K" ,key
              "-iv" ,iv))))
@@ -373,20 +418,22 @@ SAVE-FILE is a new file name of encrypted file name.
 
 ;;;###autoload
 (defun openssl-cipher-decrypt-file (file &optional algorithm save-file
-                                         &rest _keywords)
+                                         &rest keywords)
   "Decrypt a FILE which was encrypted by `openssl-cipher-encrypt-file'
 
 If ALGORITHM is nil then use `openssl-cipher-algorithm' to decrypt.
 SAVE-FILE is a new file name of decrypted file name.
  If this file already exists, confirm to overwrite by minibuffer prompt.
  Do not forget to delete FILE if you do not want encrypted file.
+
+KEYWORDS : Same as `openssl-cipher-decrypt-unibytes'
 "
   (openssl-cipher--check-save-file save-file)
   (let ((pass (openssl-cipher--read-passwd)))
     (openssl-cipher--call-with-io-file
      file (or save-file file)
      (lambda (output)
-       (openssl-cipher--encrypt-file pass file output algorithm nil nil)))))
+       (openssl-cipher--encrypt-file pass file output algorithm nil keywords)))))
 
 ;;;###autoload
 (defun openssl-cipher-installed-p ()
