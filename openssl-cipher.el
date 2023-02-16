@@ -77,6 +77,8 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+
 (defgroup openssl-cipher nil
   "Emacs openssl cipher interface."
   :group 'applications
