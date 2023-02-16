@@ -8,7 +8,7 @@
   (ceiling (float-time (nth 5 (file-attributes file)))))
 
 (defmacro openssl-cipher-map-version (&rest form)
-  (let ((ver (gensym "ver")))
+  (let ((ver (make-symbol "ver")))
     `(let ((,ver openssl-cipher-encryption-version))
        (unwind-protect
            (dolist (v openssl-cipher-test-versions)
