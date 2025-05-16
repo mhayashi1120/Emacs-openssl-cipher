@@ -1,4 +1,4 @@
-;;; openssl-cipher.el --- Encrypt/Decrypt string with password by openssl -*- lexical-binding: t -*-
+;;; openssl-cipher.el --- Encrypt/Decrypt string with password by openssl -*- lexical-binding: t; -*-
 
 ;; Author: Masahiro Hayashi <mhayashi1120@gmail.com>
 ;; Keywords: data, convenience, files
