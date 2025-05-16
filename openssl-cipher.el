@@ -4,7 +4,7 @@
 ;; Keywords: data, convenience, files
 ;; URL: https://github.com/mhayashi1120/Emacs-openssl-cipher
 ;; Emacs: GNU Emacs 24 or later
-;; Version: 0.8.1
+;; Version: 0.8.2
 ;; Package-Requires: ((emacs "24") (cl-lib "0.7.1"))
 
 ;; This program is free software; you can redistribute it and/or
@@ -94,13 +94,14 @@
   :group 'openssl-cipher
   :type 'file)
 
-(defvar openssl-cipher-string-encoding (terminal-coding-system))
+(defvar openssl-cipher-string-encoding
+  (or (terminal-coding-system) 'utf-8))
 
 (defcustom openssl-cipher-encryption-version 'latest
   "Define this `openssl-cipher' package's default encryption behavior.
 
 Supported values are:
-`latest' : The most secure version `openssl' command recommended which this 
+`latest' : The most secure version `openssl' command recommended which this
     package's maintainer detected. This is default value.
 `default' : Completely default behavior of `openssl' command. No extra
      arguments when call `openssl' command. Current version of
@@ -117,7 +118,7 @@ Supported values are:
           (const pbkdf2)
           (const legacy-sha256)
           (const legacy-md5)))
-  
+
 ;;;
 ;;; inner functions
 ;;;
@@ -242,7 +243,7 @@ be cleared after a Encryption/Decryption.")
 (defun openssl-cipher--encrypt-file (password in-file out-file
                                               algorithm encrypt-p properties
                                               &rest args)
-  ;; Support misc arguents to resotre previous `openssl` encryption behavior. 
+  ;; Support misc arguents to resotre previous `openssl` encryption behavior.
   ;; openssl-1.1.1n warn the default argument although.
   (cl-ecase (or (plist-get properties :version)
                 openssl-cipher-encryption-version)
